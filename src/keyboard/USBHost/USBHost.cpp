@@ -152,6 +152,8 @@ void USBHost_loop()
 
         //if (c == 'r') c = 5; // emulate refresh key
         if (c == '`') c = 5; // emulate refresh key
+        if (c == '-') c = 23; // ignore /r key
+        if (c == '=') c = 22; // ignore /r key
         if (c == 13) return; // ignore /r key
 
          //

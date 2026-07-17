@@ -120,6 +120,12 @@ public:
     //
     bool savingInProgress = false;
 
+    // Guards pageBackward/pageForward/advanceWindow against re-entry. The
+    // auto-repeat engine (Editor::loop) runs on the display core while key
+    // events arrive on the keyboard core, so a slow window load can be
+    // re-triggered concurrently without this.
+    volatile bool pagingInProgress = false;
+
     // Handle Keyboard Inputs
     void keyboard(int key, bool pressed);
     int lastKey = 0; // int: keys above 127 must not be narrowed

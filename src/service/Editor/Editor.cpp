@@ -483,14 +483,18 @@ bool Editor::loadWindow(size_t offset, size_t length)
 
     resetBuffer();
     composer.reset();
-    size_t bytesRead = 0;
-    while (bytesRead < length && file.available())
-    {
-        buffer[bytesRead++] = file.read();
-    }
+
+    // block read - a per-byte read() loop through the VFS layer takes
+    // hundreds of ms for a half-buffer window, long enough for the
+    // auto-repeat engine to re-trigger paging mid-load
+    if (length > BUFFER_SIZE)
+        length = BUFFER_SIZE;
+    size_t bytesRead = file.read((uint8_t *)buffer, length);
+    if ((int)bytesRead < 0)
+        bytesRead = 0;
+    buffer[bytesRead] = '\0';
 
     file.close();
-    delay(100);
 
     seekPos = offset;
     loadedLength = bytesRead;
@@ -505,15 +509,29 @@ bool Editor::loadWindow(size_t offset, size_t length)
 // starts, so the writer can keep scrolling back through earlier text.
 void Editor::pageBackward()
 {
+    if (pagingInProgress)
+    {
+        _log("pageBackward: paging already in progress, skipping\n");
+        return;
+    }
+    pagingInProgress = true;
+
+    // stop auto-repeat so the display core can't re-enter paging while
+    // this (slow, file I/O) load is still running
+    lastKey = 0;
+    lastPressTime = 0;
+
     if (seekPos == 0)
     {
         _log("pageBackward: already at the start of the file\n");
+        pagingInProgress = false;
         return;
     }
 
     if (!saved && !saveFile())
     {
         _log("pageBackward: flush failed, staying on current page\n");
+        pagingInProgress = false;
         return;
     }
 
@@ -522,20 +540,38 @@ void Editor::pageBackward()
     size_t newSeekPos = (windowEnd > stepSize) ? windowEnd - stepSize : 0;
 
     if (!loadWindow(newSeekPos, windowEnd - newSeekPos))
+    {
+        pagingInProgress = false;
         return;
+    }
 
     // land at the end, continuing the upward motion seamlessly
     cursorPos = getBufferSize();
     updateScreen();
+
+    pagingInProgress = false;
 }
 
 // Load the chunk of the file that starts exactly where the current window
 // ends, so the writer can scroll forward again after paging backward.
 void Editor::pageForward()
 {
+    if (pagingInProgress)
+    {
+        _log("pageForward: paging already in progress, skipping\n");
+        return;
+    }
+    pagingInProgress = true;
+
+    // stop auto-repeat so the display core can't re-enter paging while
+    // this (slow, file I/O) load is still running
+    lastKey = 0;
+    lastPressTime = 0;
+
     if (!saved && !saveFile())
     {
         _log("pageForward: flush failed, staying on current page\n");
+        pagingInProgress = false;
         return;
     }
 
@@ -543,6 +579,7 @@ void Editor::pageForward()
     if (windowEnd >= fileSize)
     {
         // already at the live tail - nothing further on disk
+        pagingInProgress = false;
         return;
     }
 
@@ -551,11 +588,16 @@ void Editor::pageForward()
     size_t toLoad = (remaining <= stepSize) ? remaining : stepSize;
 
     if (!loadWindow(windowEnd, toLoad))
+    {
+        pagingInProgress = false;
         return;
+    }
 
     // land at the start, continuing the downward motion seamlessly
     cursorPos = 0;
     updateScreen();
+
+    pagingInProgress = false;
 }
 
 // The buffer filled up while typing. Flush it, then keep going from
@@ -571,9 +613,22 @@ void Editor::advanceWindow()
     // synchronously on the keystroke path itself whenever the buffer fills.
     printf("[save] advanceWindow: buffer full, forced save starting\n");
 
+    if (pagingInProgress)
+    {
+        _log("advanceWindow: paging already in progress, skipping\n");
+        return;
+    }
+    pagingInProgress = true;
+
+    // stop auto-repeat so the display core can't re-enter paging while
+    // this (slow, file I/O) window swap is still running
+    lastKey = 0;
+    lastPressTime = 0;
+
     if (!saveFile())
     {
         _log("advanceWindow: flush failed, buffer is full and can't advance\n");
+        pagingInProgress = false;
         return;
     }
 
@@ -609,12 +664,17 @@ void Editor::advanceWindow()
         size_t toLoad = (remaining <= stepSize) ? remaining : stepSize;
 
         if (!loadWindow(windowEnd, toLoad))
+        {
+            pagingInProgress = false;
             return;
+        }
 
         cursorPos = 0;
     }
 
     updateScreen();
+
+    pagingInProgress = false;
 }
 
 // Make the current file empty
