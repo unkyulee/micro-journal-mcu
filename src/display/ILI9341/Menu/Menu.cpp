@@ -13,6 +13,7 @@
 #include "Background/Background.h"
 #include "Foreground/Foreground.h"
 #include "PairBLE/PairBLE.h"
+#include "Language/Language.h"
 
 // properties
 #define MENUBAR_COLOR TFT_RED
@@ -150,6 +151,16 @@ void Menu_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     }
 #endif
 
+#ifdef REV6
+    else if (menu_state == MENU_LANGUAGE)
+    {
+        if (menu_state_prev != menu_state)
+            Language_setup(ptft, pu8f);
+
+        Language_render(ptft, pu8f);
+    }
+#endif
+
     // save prev state
     menu_state_prev = menu_state;
 }
@@ -225,6 +236,15 @@ void Menu_keyboard(char key)
         return;
     }
 
+#endif
+
+#ifdef REV6
+    // Input language (Latin / Hangul)
+    else if (menu_state == MENU_LANGUAGE)
+    {
+        Language_keyboard(key);
+        return;
+    }
 #endif
 }
 
