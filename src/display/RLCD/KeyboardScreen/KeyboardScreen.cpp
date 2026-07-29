@@ -213,7 +213,7 @@ void KeyboardScreen_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX
 
         // Instructions
         u8->setCursor(10, 145);
-        u8->print("Turn off device to end session.");
+        u8->print("Long press ESC to end session.");
 
         u8->setCursor(10, 175);
         u8->print("Press top-left and top-right keys");
