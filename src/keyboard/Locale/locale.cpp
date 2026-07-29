@@ -168,7 +168,7 @@ uint8_t keyboard_international(uint8_t precursor, uint8_t ascii)
       {{'`', 'u'}, 249},
       {{'`', 'U'}, 217},
 
-      // ' a e i o u
+      // ' a e i o u y c
       {{'\'', 'a'}, 225},
       {{'\'', 'A'}, 193},
       {{'\'', 'e'}, 233},
@@ -179,6 +179,10 @@ uint8_t keyboard_international(uint8_t precursor, uint8_t ascii)
       {{'\'', 'O'}, 211},
       {{'\'', 'u'}, 250},
       {{'\'', 'U'}, 218},
+      {{'\'', 'y'}, 253},
+      {{'\'', 'Y'}, 221},
+      {{'\'', 'c'}, 231},
+      {{'\'', 'C'}, 199},
 
       // " a e i o u y
       {{'\"', 'a'}, 228},

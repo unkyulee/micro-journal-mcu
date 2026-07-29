@@ -6,8 +6,9 @@
 
 // Simple input-language chooser for Rev.6.
 //
-//   (L) Latin Letters -> US keyboard layout, Latin font (WP_FONTS index 0)
-//   (H) Hangul         -> KR keyboard layout, Korean font (WP_FONTS index 2)
+//   (L) Latin Letters      -> US keyboard layout, Latin font (WP_FONTS index 0)
+//   (I) US International   -> INT keyboard layout, Latin font (dead keys for accents)
+//   (H) Hangul             -> KR keyboard layout, Korean font (WP_FONTS index 2)
 //
 // Selecting "KR" makes the ko locale emit Hangul jamo, which the Editor's
 // HangulComposer assembles into syllables; font index 2 (korean20) renders
@@ -25,23 +26,29 @@ void Language_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 {
     JsonDocument &app = status();
 
-    // currently selected font (0 = Latin, 2 = Korean) to highlight the choice
-    int current_font = app["config"]["font"].as<int>();
+    // currently selected layout decides which entry is highlighted
+    String layout = app["config"]["keyboard_layout"].as<String>();
+    if (layout == "null" || layout.isEmpty())
+        layout = "US";
 
     ptft->setTextColor(TFT_WHITE, TFT_BLACK);
     ptft->setCursor(0, 30, 2);
     ptft->print(" SELECT INPUT LANGUAGE");
 
-    ptft->setTextColor(current_font == 2 ? TFT_WHITE : TFT_GREEN, TFT_BLACK);
+    ptft->setTextColor(layout == "US" ? TFT_GREEN : TFT_WHITE, TFT_BLACK);
     ptft->setCursor(0, 70, 2);
     ptft->print(" [L] Latin Letters");
 
-    ptft->setTextColor(current_font == 2 ? TFT_GREEN : TFT_WHITE, TFT_BLACK);
+    ptft->setTextColor(layout == "INT" ? TFT_GREEN : TFT_WHITE, TFT_BLACK);
     ptft->setCursor(0, 95, 2);
+    ptft->print(" [I] US International");
+
+    ptft->setTextColor(layout == "KR" ? TFT_GREEN : TFT_WHITE, TFT_BLACK);
+    ptft->setCursor(0, 120, 2);
     ptft->print(" [H] Hangul");
 
     ptft->setTextColor(TFT_WHITE, TFT_BLACK);
-    ptft->setCursor(0, 140, 2);
+    ptft->setCursor(0, 160, 2);
     ptft->print(" [B] BACK");
 }
 
@@ -57,6 +64,17 @@ void Language_keyboard(char key)
     if (key == 'l')
     {
         app["config"]["keyboard_layout"] = "US";
+        app["config"]["font"] = 0;
+        config_save();
+
+        app["screen"] = WORDPROCESSOR;
+        app["menu"]["state"] = MENU_HOME;
+    }
+
+    // US International (dead keys: ' ` " ^ ~ compose accented latin)
+    else if (key == 'i')
+    {
+        app["config"]["keyboard_layout"] = "INT";
         app["config"]["font"] = 0;
         config_save();
 

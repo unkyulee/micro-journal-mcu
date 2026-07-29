@@ -292,6 +292,22 @@ int keyboard_keypad_68_get_key(keypadEvent e)
         key = keyboard_ascii_ko(key, e.bit.EVENT == KEY_JUST_PRESSED);
     }
 
+    // US International is the US layout plus dead key composition, so the
+    // layer table already produces the right character - only the accent
+    // folding is missing. Feed the RESOLVED character to the precursor
+    // filter instead of going through key_hid: the dead keys live on
+    // punctuation ( ' " ` ~ ^ ), which has no key_hid entry, and half of
+    // them only exist on the LOWER/SHIFT layers that a physical-key lookup
+    // cannot see. Press events only - a release must not disturb the
+    // pending precursor.
+    else if (locale == "INT")
+    {
+        if (e.bit.EVENT == KEY_JUST_PRESSED && key >= 32 && key <= 126)
+        {            
+            key = keyboard_precursor_filter(key);            
+        }
+    }
+
     // for other non-US layouts, re-map character keys through the locale
     // tables instead of returning the hardcoded US character
     else if (use_locale)

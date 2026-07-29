@@ -23,7 +23,6 @@
 byte rowPins[ROWS] = {15, 16, 17, 18};
 byte colPins[COLS] = {1, 2, 42, 41, 40, 39, 45, 48, 47, 21, 20, 19};
 
-
 // 2 - Home
 // 3 - End
 
@@ -44,7 +43,6 @@ byte colPins[COLS] = {1, 2, 42, 41, 40, 39, 45, 48, 47, 21, 20, 19};
 // 27 - ESC
 
 // 127 - DEL
-
 
 // layers
 // prettier-ignore
@@ -74,7 +72,7 @@ int layers[LAYERS][ROWS * COLS] = {
      14, 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 14,
      '_', '+', '{', '}', 17, ' ', ' ', 2, 21, 20, 3, '\n'},
 
-     {// RAISE layer
+    {// RAISE layer
      MENU, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 127,
      '`', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'',
      14, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 14,
@@ -152,7 +150,7 @@ int layers[LAYERS][ROWS * COLS] = {
      '_', '+', '{', '}', 17, ' ', ' ', 2, 21, 20, 3, '\n',
      MENU},
 
-     {// RAISE layer
+    {// RAISE layer
      27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 127,
      '`', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'',
      14, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 14,
@@ -179,8 +177,6 @@ char keys[ROWS][COLS] = {
 };
 
 #endif
-
-
 
 //
 Adafruit_Keypad customKeypad = Adafruit_Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
@@ -227,8 +223,7 @@ void keyboard_keypad_48_loop()
             _debug("[keyboard_keypad_48_get_key] Key: %d, Event: %d, Row: %d, Col: %d Character: [%d] '%c'\n",
                    e.bit.KEY, e.bit.EVENT, e.bit.ROW, e.bit.COL,
                    character, character);
- 
-           
+
             //
             display_keyboard(character, e.bit.EVENT == KEY_JUST_PRESSED, e.bit.KEY);
         }
@@ -295,7 +290,7 @@ int keyboard_keypad_48_get_key(keypadEvent e)
     // check if the layer key is pressed
     if (_lower_pressed)
         _layer = 2;
-    if(_raise_pressed)
+    if (_raise_pressed)
         _layer = 4;
     // check if the shift key is pressed
     if (_shift_pressed)
@@ -326,6 +321,22 @@ int keyboard_keypad_48_get_key(keypadEvent e)
         key = keyboard_ascii_ko(key, e.bit.EVENT == KEY_JUST_PRESSED);
     }
 
+    // US International is the US layout plus dead key composition, so the
+    // layer table already produces the right character - only the accent
+    // folding is missing. Feed the RESOLVED character to the precursor
+    // filter instead of going through key_hid: the dead keys live on
+    // punctuation ( ' " ` ~ ^ ), which has no key_hid entry, and half of
+    // them only exist on the LOWER/SHIFT layers that a physical-key lookup
+    // cannot see. Press events only - a release must not disturb the
+    // pending precursor.
+    else if (locale == "INT")
+    {
+        if (e.bit.EVENT == KEY_JUST_PRESSED && key >= 32 && key <= 126)
+        {            
+            key = keyboard_precursor_filter(key);            
+        }
+    }
+
     // for other non-US layouts, re-map character keys through the locale
     // tables instead of returning the hardcoded US character (see
     // Keypad_68 for the same pattern)
@@ -335,6 +346,13 @@ int keyboard_keypad_48_get_key(keypadEvent e)
         if (hid != 0)
         {
             int ascii = keyboard_keycode_ascii(locale, hid, _shift_pressed, _raise_pressed, e.bit.EVENT == KEY_JUST_PRESSED);
+            if (locale == "INT")
+            {
+                if (e.bit.EVENT == KEY_JUST_PRESSED && key >= 32 && key <= 126)
+                {
+                    key = keyboard_precursor_filter(key);
+                }
+            }
             if (ascii != 0)
                 key = ascii;
         }

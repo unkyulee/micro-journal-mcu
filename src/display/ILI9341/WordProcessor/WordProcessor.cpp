@@ -375,6 +375,12 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     String wordCountFormatted = formatNumber(wordCount);
     ptft->printf("%s words", wordCountFormatted);
 
+    String layout = app["config"]["keyboard_layout"].as<String>();
+    if (layout == "null" || layout.isEmpty())
+        layout = "US";
+    ptft->setCursor(230, STATUSBAR_Y, 2);
+    ptft->print(layout);
+
 #ifdef REV5
     if (app["config"]["ble"]["address"].is<const char *>())
     {
@@ -391,7 +397,6 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
             ptft->print("BLE");
         }
     }
-
 #endif
 
     // SAVE STATUS
@@ -493,11 +498,11 @@ void WP_keyboard(int key, bool pressed, int index)
 
             //
             Editor::getInstance().saveFile();
-            
+
             // save config
             app["config"]["file_index"] = fileIndex;
             config_save();
-            
+
             // load new file
             Editor::getInstance().loadFile(format("/%d.txt", fileIndex));
         }
