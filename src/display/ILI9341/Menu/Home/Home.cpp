@@ -52,6 +52,7 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 #ifdef REV6
     ptft->println(" [T] BLE KEYBOARD");
     ptft->println(" [L] LANGUAGE - " + keyboard_layout);
+    ptft->println(" [U] DRIVE MODE");
 #endif
 
     ptft->println(" [G] BACKGROUND COLOR");
@@ -153,6 +154,11 @@ void Home_keyboard(char key)
     {
         // move to input language selection (Latin / Hangul)
         app["menu"]["state"] = MENU_LANGUAGE;
+    }
+    else if (key == 'u')
+    {
+        // mount the internal storage as a USB drive
+        app["menu"]["state"] = MENU_STORAGE;
     }
 #endif
 
