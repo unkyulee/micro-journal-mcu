@@ -6,6 +6,14 @@
 #include <ST73XX_UI.h>
 #include <ST73xxPins.h>
 
+#ifndef RLCD_TYPE
+#define RLCD_TYPE 2
+#endif
+
+#if RLCD_TYPE != 1 && RLCD_TYPE != 2
+#error "RLCD_TYPE must be 1 (previous display) or 2 (new supplier display)"
+#endif
+
 #define ST7305_COLOR_WHITE 0
 #define ST7305_COLOR_BLACK 1
 

@@ -1,5 +1,16 @@
 # ST7305_MonoTFT_Library
 
+## 4.2-inch display type
+
+Select the installed 4.2-inch module with the `RLCD_TYPE` build flag:
+
+```ini
+-D RLCD_TYPE=1 ; previous display module
+-D RLCD_TYPE=2 ; new supplier display module
+```
+
+Type 2 is used when the flag is omitted. Define only one numeric value.
+
  
 
 ### Default pins

@@ -52,15 +52,8 @@ void display_RLCD_setup()
 {
   _log("DISPLAY RLCD SETUP\n");
 
-  // SPI SETUP
-  SPI.begin(PIN_SCLK, -1, PIN_MOSI, PIN_CS);
-
-  // Initialise the screen
+  // The display driver owns SPI setup and the complete supplier startup sequence.
   display.initialize();
-  display.High_Power_Mode();
-  display.display_on(true);
-  display.display_Inversion(false);
-  display.clearDisplay();
 
   // connect u8g2 procedures to TFT_eSPI
   u8g2.begin(display);
