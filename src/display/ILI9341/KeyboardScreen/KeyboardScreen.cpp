@@ -17,7 +17,7 @@ int keyboardConnectedPrev = -1;
 
 // Holding ESC exits the persistent BLE keyboard mode. The timer is checked by
 // KeyboardScreen_render() so the device restarts without waiting for key-up.
-static constexpr uint32_t ESC_LONG_PRESS_MS = 3000;
+static constexpr uint32_t ESC_LONG_PRESS_MS = 2000;
 static volatile bool escPressed = false;
 static volatile uint32_t escPressedAt = 0;
 static bool bleKeyboardExitStarted = false;

@@ -120,17 +120,17 @@ void Home_keyboard(char key)
     }
 
 #ifdef REV5
-    else if (key == 'k')
+    else if (key == 'k' || key == 'K')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_LAYOUT;
     }
-    else if (key == 'f')
+    else if (key == 'f' || key == 'F')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_BUTTONS;
     }
-    else if (key == 'm' || key == MENU)
+    else if (key == 'm' || key == 'M' || key == MENU)
     {
         // move to bluetooth setup
         app["menu"]["state"] = MENU_BLUETOOTH;
@@ -138,37 +138,37 @@ void Home_keyboard(char key)
 
 #endif
 
-    else if (key == 'w')
+    else if (key == 'w' || key == 'W')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_WIFI;
     }
 
 #ifdef REV6
-    else if (key == 't')
+    else if (key == 't' || key == 'T')
     {
         // move to keyboard layout
         app["screen"] = KEYBOARDSCREEN;
     }
-    else if (key == 'l')
+    else if (key == 'l' || key == 'L')
     {
         // move to input language selection (Latin / Hangul)
         app["menu"]["state"] = MENU_LANGUAGE;
     }
-    else if (key == 'u')
+    else if (key == 'u' || key == 'U')
     {
         // mount the internal storage as a USB drive
         app["menu"]["state"] = MENU_STORAGE;
     }
 #endif
 
-    else if (key == 'g')
+    else if (key == 'g' || key == 'G')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_BACKGROUND;
     }
 
-    else if (key == 'c')
+    else if (key == 'c' || key == 'C')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_FONTCOLOR;

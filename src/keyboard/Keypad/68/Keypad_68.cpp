@@ -146,7 +146,10 @@ void keyboard_keypad_68_loop()
             keypadEvent e = customKeypad.read();
             // Check if knob is long pressed
             // Detect the knob click by the position of the key index
-            if (e.bit.KEY == 69 || e.bit.KEY == 0)
+            // Index 69 is the knob. Index 0 is ESC and must remain in the
+            // normal keypad pipeline so KeyboardScreen can measure its full
+            // two-second hold duration.
+            if (e.bit.KEY == 69)
             {
                 if (e.bit.EVENT == KEY_JUST_PRESSED)
                 {
