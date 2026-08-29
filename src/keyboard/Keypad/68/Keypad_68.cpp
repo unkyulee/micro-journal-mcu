@@ -128,7 +128,7 @@ void keyboard_keypad_68_loop()
         app["knobLongPressed"] = true;
 
         _debug("[keyboard_keypad_68_loop] knob long press detected\n");
-        display_keyboard(MENU, KEY_JUST_RELEASED, 69);
+        display_keyboard(MENU, false, 69);
     }
 
     //

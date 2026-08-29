@@ -15,10 +15,12 @@ BleKeyboard bleKeyboard;
 int keyboardConnectedPrev = -1;
 
 static constexpr uint8_t HID_KEY_ESCAPE = 0x29;
+static constexpr uint8_t HID_KEY_PAUSE = 0x48;
 static constexpr uint32_t ESC_LONG_PRESS_MS = 2000;
 static volatile bool escPressed = false;
 static volatile uint32_t escPressedAt = 0;
 static bool bleKeyboardExitStarted = false;
+static bool pausePressed = false;
 
 static void KeyboardScreen_exitBleKeyboardMode()
 {
@@ -77,6 +79,7 @@ void KeyboardScreen_setup()
     escPressed = false;
     escPressedAt = 0;
     bleKeyboardExitStarted = false;
+    pausePressed = false;
 
     // Clear Screen
     epd_poweron();
@@ -153,29 +156,33 @@ void KeyboardScreen_render()
 void KeyboardScreen_keyboard(uint8_t modifier, uint8_t reserved, uint8_t *keycodes)
 {
     bool escapeInReport = false;
+    bool pauseInReport = false;
+    KeyReport filteredReport = {};
+    filteredReport.modifiers = modifier;
+    filteredReport.reserved = reserved;
+
+    int filteredIndex = 0;
     for (int i = 0; i < 6; i++)
     {
         if (keycodes[i] == HID_KEY_ESCAPE)
-        {
             escapeInReport = true;
-            break;
-        }
+        else if (keycodes[i] == HID_KEY_PAUSE)
+            pauseInReport = true;
+        else if (keycodes[i] != 0 && filteredIndex < 6)
+            filteredReport.keys[filteredIndex++] = keycodes[i];
     }
 
-    // EPD receives raw HID reports rather than separate key events. Suppress
-    // the ESC-down report until its duration is known, then synthesize a normal
-    // short press or exit BLE keyboard mode for a long press.
-    if (escapeInReport)
+    // EPD receives raw HID reports rather than separate key events. Keep ESC
+    // out of the forwarded report until its duration is known, but continue
+    // forwarding every other held key and modifier while ESC is down.
+    if (escapeInReport && !escPressed)
     {
-        if (!escPressed)
-        {
-            escPressedAt = millis();
-            escPressed = true;
-        }
-        return;
+        escPressedAt = millis();
+        escPressed = true;
     }
 
-    if (escPressed)
+    bool sendShortEscape = false;
+    if (!escapeInReport && escPressed)
     {
         const uint32_t heldFor = millis() - escPressedAt;
         escPressed = false;
@@ -186,59 +193,57 @@ void KeyboardScreen_keyboard(uint8_t modifier, uint8_t reserved, uint8_t *keycod
             return;
         }
 
-        if (bleKeyboard.isConnected())
-        {
-            KeyReport escapeReport = {};
-            escapeReport.keys[0] = HID_KEY_ESCAPE;
-            bleKeyboard.sendReport(&escapeReport);
-        }
+        sendShortEscape = true;
     }
+
+    // PAUSE is the SEND command. Trigger only on its key-down edge and remove
+    // it from the BLE report without suppressing other simultaneously held keys.
+    const bool startSend = pauseInReport && !pausePressed;
+    pausePressed = pauseInReport;
 
     if (!bleKeyboard.isConnected())
         return;
 
     // any key pressed is going to stop sending text
     JsonDocument &app = status();
-    app["send_stop"] = true;
+    // A PAUSE release produces an otherwise empty report. Do not let that
+    // immediately cancel the SEND task that its preceding press just started.
+    if (filteredIndex > 0 || modifier != 0 || sendShortEscape)
+        app["send_stop"] = true;
 
-    // get which key is pressed
-    uint8_t key = 0;
-    for (int i = 0; i < 6; i++)
+    if (startSend)
     {
-        if (keycodes[i] != 0)
-        {
-            key = keycodes[i];
-            break;
-        }
-    }
-
-    // PAUSE key is LEFT KNOB click
-    if (key == 0x48)
-    {
-        // request SEND to background task
         app["task"] = "send_start";
         app["send_stop"] = false;
         app["send_finished"] = false;
-
-        return;
     }
 
-    // send out the scan code
-    KeyReport reportCopy;
-    reportCopy.modifiers = modifier;
-    reportCopy.reserved = reserved;
-    for (int i = 0; i < 6; i++)
-        reportCopy.keys[i] = keycodes[i];
+    // A short ESC needs distinct down/up notifications. Preserve the current
+    // modifier and other held keys in both reports so the host state remains
+    // synchronized during key combinations.
+    if (sendShortEscape)
+    {
+        KeyReport escapeReport = filteredReport;
+        for (int i = 0; i < 6; i++)
+        {
+            if (escapeReport.keys[i] == 0)
+            {
+                escapeReport.keys[i] = HID_KEY_ESCAPE;
+                break;
+            }
+        }
+        bleKeyboard.sendReport(&escapeReport);
+        delay(8);
+    }
 
-    //
-    bleKeyboard.sendReport(&reportCopy);
+    bleKeyboard.sendReport(&filteredReport);
     _debug("KeyboardScreen_keyboard::%02x %02x %02x %02x %02x %02x %02x %02x\n",
-           modifier,
-           reserved,
-           keycodes[0],
-           keycodes[1],
-           keycodes[2],
-           keycodes[3],
-           keycodes[4],
-           keycodes[5]);
+           filteredReport.modifiers,
+           filteredReport.reserved,
+           filteredReport.keys[0],
+           filteredReport.keys[1],
+           filteredReport.keys[2],
+           filteredReport.keys[3],
+           filteredReport.keys[4],
+           filteredReport.keys[5]);
 }

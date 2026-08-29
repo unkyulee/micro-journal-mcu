@@ -70,6 +70,27 @@ int _usb_keyboard_layers[2][72] = {
 };
 #endif
 
+// Remember the BLE key chosen on key-down. Layer state can change before the
+// physical key is released, so resolving both events independently can leave a
+// key stuck on the host.
+static int activeBleKeys[TOTAL_KEYS] = {};
+static int bleLayer = 0;
+static bool sendLeftPressed = false;
+static bool sendRightPressed = false;
+static bool sendChordActive = false;
+
+static int KeyboardScreen_resolveKey(int keypadKey, int mappedKey)
+{
+    // Characters arriving here have already passed through keyboard.json,
+    // shift and locale conversion. The BLE table remains authoritative for
+    // modifiers/navigation keys represented internally as control codes/zero.
+    if ((keypadKey >= 32 && keypadKey <= 126) ||
+        keypadKey == '\b' || keypadKey == '\t' || keypadKey == '\n' || keypadKey == 127)
+        return keypadKey;
+
+    return mappedKey;
+}
+
 #if defined(KEYPAD_48)
 /*
 Find the keycode from
@@ -143,6 +164,11 @@ void KeyboardScreen_setup(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX 
     escPressed = false;
     escPressedAt = 0;
     bleKeyboardExitStarted = false;
+    bleLayer = 0;
+    memset(activeBleKeys, 0, sizeof(activeBleKeys));
+    sendLeftPressed = false;
+    sendRightPressed = false;
+    sendChordActive = false;
 
     // load keyboard layout
     // Load Custom Keybaord Layout
@@ -239,6 +265,47 @@ bool KeyboardScreen_needsDisplay()
 // keyboard message will come from Rev.6 via this function.
 void KeyboardScreen_keyboard(int key, bool pressed, int index)
 {
+    if (index < 0 || index >= TOTAL_KEYS)
+    {
+        _log("KeyboardScreen_keyboard: invalid key index %d\n", index);
+        return;
+    }
+
+    // Track the SEND chord before ESC handling; index 0 is also ESC, and the
+    // former early return made the corner-key chord unreachable.
+#if defined(KEYPAD_68)
+    constexpr int SEND_RIGHT_INDEX = 14;
+#else
+    constexpr int SEND_RIGHT_INDEX = 11;
+#endif
+    if (bleKeyboard.isConnected() && (index == 0 || index == SEND_RIGHT_INDEX))
+    {
+        if (index == 0)
+            sendLeftPressed = pressed;
+        else
+            sendRightPressed = pressed;
+
+        if (!sendChordActive && sendLeftPressed && sendRightPressed)
+        {
+            sendChordActive = true;
+            escPressed = false;
+            memset(activeBleKeys, 0, sizeof(activeBleKeys));
+            bleKeyboard.releaseAll();
+            JsonDocument &app = status();
+            app["task"] = "send_start";
+            app["send_stop"] = false;
+            app["send_finished"] = false;
+            return;
+        }
+
+        if (sendChordActive)
+        {
+            if (!sendLeftPressed && !sendRightPressed)
+                sendChordActive = false;
+            return;
+        }
+    }
+
     // Handle ESC before checking the BLE connection so keyboard mode can also
     // be disabled while the ESP32 is waiting to be paired.
     const bool isEscape = key == MENU || key == 27 || key == KEY_ESC;
@@ -279,52 +346,13 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
     JsonDocument &app = status();
     app["send_stop"] = true;
 
-    // take the index and find the mapping key
-    key = _usb_keyboard_layers[0][index];
-
-    // check if lower or raise is click
-    static int layer = 0;
-    static int send = 0;
-
-    // check if first and the last key of the first row is both clicked
-    if (index == 0)
-    {
-        if (pressed)
-            send += 1;
-        else
-            send = 0;
-    }
-
-#if defined(KEYPAD_68)
-    else if (index == 14)
-#elif defined(KEYPAD_48)
-    else if (index == 11)
-#endif
-    {
-        if (pressed)
-            send += 1;
-        else
-            send = 0;
-    }
-
-    // if send is activated
-    if (send == 2)
-    {
-        // request SEND to background task
-        app["task"] = "send_start";
-        app["send_stop"] = false;
-        app["send_finished"] = false;
-
-        return;
-    }
-
     // LOWER is pressed
     if (_usb_keyboard_layers[0][index] == KEY_F24)
     {
         if (pressed)
-            layer = 1;
+            bleLayer = 1;
         else
-            layer = 0;
+            bleLayer = 0;
 
         // layer key does not count a key press
         // ignore the layer key press
@@ -335,9 +363,9 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
     if (_usb_keyboard_layers[0][index] == KEY_F23)
     {
         if (pressed)
-            layer = 2;
+            bleLayer = 2;
         else
-            layer = 0;
+            bleLayer = 0;
 
         // layer key does not count a key press
         // ignore the layer key press
@@ -345,8 +373,20 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
     }
 
     //
-    key = _usb_keyboard_layers[layer][index];
-    _debug("[KeyboardScreen_keyboard] layer %d index %d key %d\n", layer, index, key);
+    if (pressed)
+    {
+        key = KeyboardScreen_resolveKey(key, _usb_keyboard_layers[bleLayer][index]);
+        activeBleKeys[index] = key;
+    }
+    else
+    {
+        int pressedKey = activeBleKeys[index];
+        activeBleKeys[index] = 0;
+        key = pressedKey != 0
+                  ? pressedKey
+                  : KeyboardScreen_resolveKey(key, _usb_keyboard_layers[bleLayer][index]);
+    }
+    _debug("[KeyboardScreen_keyboard] layer %d index %d key %d pressed %d\n", bleLayer, index, key, pressed);
 
     // ignore dead keys
     if (key == 0)
