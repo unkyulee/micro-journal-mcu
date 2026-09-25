@@ -42,7 +42,6 @@ void Home_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     u8->println(" [W] WIFI");
     u8->println(" [L] LANGUAGE");
     u8->println(" [T] BLE KEYBOARD");
-    u8->println(" [U] DRIVE MODE");
     u8->println(" [E] WEB EDITOR");
 
     u8->println();
@@ -111,12 +110,6 @@ void Home_keyboard(char key)
     {
         // move to keyboard layout
         app["screen"] = KEYBOARDSCREEN;
-    }
-
-    else if (key == 'u')
-    {
-        // move to keyboard layout
-        app["menu"]["state"] = MENU_STORAGE;
     }
 
     else if (key == 'e' || key == 'E')

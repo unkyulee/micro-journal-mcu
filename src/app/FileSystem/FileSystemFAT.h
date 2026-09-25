@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(USE_MSC)
+#if defined(USE_FAT)
 
 #include "app/FileSystem/FileSystem.h"
 #include "app/app.h"

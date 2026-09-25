@@ -211,12 +211,11 @@ FileSystem *gfs()
         fileSystem = new FileSystemRP2040();
 #endif
 
-// Initialize the file system here
-#ifdef BOARD_ESP32_S3
-        // file system in FAT
-        fileSystem = new FileSystemFAT("storage");
 #endif
 
+#ifdef USE_FAT
+        // ESP32 internal flash, FAT partition "storage"
+        fileSystem = new FileSystemFAT("storage");
 #endif
 
         if (!fileSystem->begin())
