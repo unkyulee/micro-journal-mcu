@@ -18,30 +18,46 @@ typedef struct
 // Queue to store HID reports
 static QueueHandle_t hidQueue = nullptr;
 
+// Reconnect state. The flags are written by the NimBLE host task callbacks
+// and read by ble_loop(), which does all the blocking work and file I/O.
+static volatile bool ble_connecting = false; // async connect is pending
+static volatile bool ble_link_up = false;    // link is up, HID not attached yet
+static bool ble_attached = false;            // subscribed to key reports
+static unsigned long ble_retry_at = 0;
+
+static const char *ble_name = "";
+
+static bool ble_connect();
+static bool ble_attach();
+
+// BLE keyboard is off unless the user enables it in the menu, so the radio
+// doesn't drain the battery. Configs from before this setting existed had
+// BLE on whenever a keyboard was paired.
+bool ble_enabled()
+{
+    JsonDocument &app = status();
+    if (app["config"]["ble_enabled"].is<bool>())
+        return app["config"]["ble_enabled"].as<bool>();
+
+    return app["config"]["ble"]["address"].is<const char *>();
+}
+
 //
 void ble_setup(const char *adName)
 {
     //
     JsonDocument &app = status();
-    
-    // When ble.address exists then try to connect to the keyboard
-    if (app["config"]["ble"]["address"].is<const char *>())
+    ble_name = adName;
+
+    // When enabled and ble.address exists then ble_loop() keeps a connection
+    // pending to the keyboard. A bonded keyboard reconnects with the stored
+    // keys as soon as it advertises (usually after any key press), no
+    // pairing mode needed.
+    if (ble_enabled() && app["config"]["ble"]["address"].is<const char *>())
     {
         // BLE Initialize
         ble_init(adName);
-
-        // try to connect directly
-        const char *address = app["config"]["ble"]["address"].as<const char *>();
-        const int type = app["config"]["ble"]["type"].as<int>();
-
-        //
-        _log("[ble_setup] Attempting to connect BLE keyboard: %s\n", address);
-        if (!ble_connect(address, type))
-        {
-            // Initiate scan
-            app["task"] = "ble_connect";
-            _log("[ble_setup] Request BLE Connect\n");
-        }
+        _log("[ble_setup] BLE keyboard configured: %s\n", app["config"]["ble"]["address"].as<const char *>());
     }
 
     // Create HID report queue (10 elements of HidReport_t)
@@ -55,30 +71,36 @@ void ble_loop()
     //
     JsonDocument &app = status();
 
-    // every 10 seconds check reconnect
-    static unsigned int last = millis();
-    if (millis() - last > 10000)
+    if (ble_enabled() && app["config"]["ble"]["address"].is<const char *>())
     {
-        last = millis();
+        // BLE may have been enabled from the menu after boot
+        ble_init(ble_name);
 
-        bool ble_connected = app["ble_connected"].as<bool>();
-        if (ble_connected == false)
+        if (ble_link_up)
         {
-            // When ble.address exists then try to connect to the keyboard
-            if (app["config"]["ble"]["address"].is<const char *>())
+            // keyboard just connected: encrypt, discover and subscribe
+            if (!ble_attached && !ble_attach())
             {
-                //
-                _log("[ble_loop] BLE configuration found: %s\n", app["config"]["ble"]["address"].as<const char *>());
+                ble_link_up = false;
+                ble_retry_at = millis() + 1000;
+            }
+        }
+        else
+        {
+            if (ble_attached)
+            {
+                ble_attached = false;
+                app["ble_connected"] = false;
+                app["clear"] = true; // refresh the pairing screen status
+                _log("[ble_loop] BLE keyboard disconnected\n");
+            }
 
-                // Initiate scan
-                String task = app["task"].as<String>();
-                if (task.isEmpty())
-                {
-                    app["task"] = "ble_connect";
-                    _log("[ble_loop] ble connect request\n");
-                } else {
-                    _debug("[ble_loop] task exists: %s\n", task.c_str());
-                }
+            // keep a connection attempt pending so the keyboard is picked up
+            // whenever it starts advertising
+            if (!ble_connecting && (long)(millis() - ble_retry_at) >= 0)
+            {
+                if (!ble_connect())
+                    ble_retry_at = millis() + 1000;
             }
         }
     }
@@ -168,22 +190,24 @@ class clientCallback : public NimBLEClientCallbacks
         _log("  Encrypted: %s\n", connInfo.isEncrypted() ? "Yes" : "No");
         _log("  Bonded: %s\n", connInfo.isBonded() ? "Yes" : "No");
 
-        JsonDocument &app = status();
-        app["ble_connected"] = true;
+        // ble_loop() attaches to the HID service outside of the host task
+        ble_connecting = false;
+        ble_link_up = true;
     }
 
     void onConnectFail(NimBLEClient *pClient, int reason)
     {
-        _log("[BLEClientCallbacks] onConnectFail %d\n", reason);
-        JsonDocument &app = status();
-        app["ble_connected"] = false;
+        // a timeout here is normal: the keyboard was not advertising
+        _debug("[BLEClientCallbacks] onConnectFail %d\n", reason);
+        ble_connecting = false;
+        ble_link_up = false;
     }
 
     void onDisconnect(NimBLEClient *pClient, int reason)
     {
         _log("[BLEClientCallbacks] onDisconnect %d\n", reason);
-        JsonDocument &app = status();
-        app["ble_connected"] = false;
+        ble_connecting = false;
+        ble_link_up = false;
     }
 
     /**
@@ -232,10 +256,8 @@ class clientCallback : public NimBLEClientCallbacks
         //_log("  Key Size: %d\n", connInfo.getKeySize());
         //_log("  Role: %s\n", connInfo.getRole() == BLE_HS_CONN_ROLE_MASTER ? "Central" : "Peripheral");
 
-        // save the address
-        JsonDocument &app = status();
-        app["config"]["ble"]["address"] = connInfo.getAddress().toString().c_str();
-        config_save();
+        // the identity address is saved by ble_attach(); file I/O is not
+        // safe in this host task callback
     }
 
     /**
@@ -313,98 +335,138 @@ NimBLEClient *client;
 NimBLERemoteService *service;
 NimBLERemoteCharacteristic *characteristic;
 
-bool ble_connect(const char *address, int addrType)
+// Address to reconnect to. A bond stores the keyboard's identity address,
+// which stays valid even when the keyboard advertises with a changing
+// private address (the stored IRK lets the controller resolve it).
+static NimBLEAddress ble_target_address()
 {
-    _log("[ble_connect] address %s\n", address);
+    JsonDocument &app = status();
+    const char *address = app["config"]["ble"]["address"].as<const char *>();
+    const int type = app["config"]["ble"]["type"].as<int>();
+    NimBLEAddress target = NimBLEAddress(std::string(address), type);
 
-    // Client Setup
-    client = NimBLEDevice::createClient();
+    // older firmware could save a temporary private address instead of the
+    // identity address; fall back to the most recent bond in that case
+    int bonds = NimBLEDevice::getNumBonds();
+    if (target.isRpa() && !NimBLEDevice::isBonded(target) && bonds > 0)
+        target = NimBLEDevice::getBondedAddress(bonds - 1);
+
+    return target;
+}
+
+// Start an asynchronous connection attempt. It stays pending in the
+// controller until the keyboard advertises or the timeout expires, so a
+// sleeping keyboard is picked up as soon as a key is pressed on it.
+static bool ble_connect()
+{
     if (!client)
     {
-        _log("[ble_connect] Failed to create client\n");
-        return false;
+        client = NimBLEDevice::createClient();
+        if (!client)
+        {
+            _log("[ble_connect] Failed to create client\n");
+            return false;
+        }
+        client->setClientCallbacks(&clientCB, false);
+        client->setConnectionParams(12, 12, 0, 51);
+        client->setConnectTimeout(30 * 1000);
     }
-    client->setClientCallbacks(&clientCB, false);
-    client->setConnectionParams(12, 12, 0, 51);
-    client->setConnectTimeout(2000);
 
-    // Address Setup
-    NimBLEAddress bleAddr = NimBLEAddress(std::string(address), addrType);
+    NimBLEAddress target = ble_target_address();
+    _debug("[ble_connect] waiting for %s bonded: %d\n",
+           target.toString().c_str(), NimBLEDevice::isBonded(target));
 
-    // try to connect
-    if (!client->connect(bleAddr))
+    ble_connecting = true;
+    if (!client->connect(target, true, true))
     {
-        _log("[ble_connect] Failed to connect\n");
-        client->setClientCallbacks(nullptr);
-        NimBLEDevice::deleteClient(client);
-        client = nullptr;
+        _debug("[ble_connect] Failed to start connection: %d\n", client->getLastError());
+        ble_connecting = false;
         return false;
     }
 
-    // check if connected
-    if (!client->isConnected())
-    {
-        _log("[ble_connect] Still not connected after connect()\n");
-        client->setClientCallbacks(nullptr);
-        NimBLEDevice::deleteClient(client);
-        client = nullptr;
-        return false;
-    }
+    return true;
+}
 
-    _log("[ble_connect] Connected!\n");
+// Secure the link and subscribe to the keyboard's HID reports
+static bool ble_attach()
+{
+    _log("[ble_attach] Connected to %s\n", client->getPeerAddress().toString().c_str());
 
-    // Try to setup the Keyboard
+    // Encrypt the link. A bonded keyboard is re-encrypted with the stored
+    // keys; a new keyboard (in pairing mode) is paired and bonded here.
+    if (!client->secureConnection())
+        _log("[ble_attach] Failed to secure connection: %d\n", client->getLastError());
+
     if (!client->discoverAttributes())
     {
-        _log("[ble_connect] Failed to discover attributes\n");
+        _log("[ble_attach] Failed to discover attributes\n");
         client->disconnect();
-        client->setClientCallbacks(nullptr);
-        NimBLEDevice::deleteClient(client);
-        client = nullptr;
         return false;
     }
 
     service = client->getService(serviceUUID);
     if (service == nullptr)
     {
-        _log("[ble_connect] Cannot find service %s\n", serviceUUID.toString().c_str());
+        _log("[ble_attach] Cannot find service %s\n", serviceUUID.toString().c_str());
         client->disconnect();
-        client->setClientCallbacks(nullptr);
-        NimBLEDevice::deleteClient(client);
-        client = nullptr;
         return false;
-    };
+    }
 
     characteristic = service->getCharacteristic(charUUID);
     if (characteristic == nullptr)
     {
-        _log("[ble_connect] Failed to get characteristic %s\n", charUUID.toString().c_str());
+        _log("[ble_attach] Failed to get characteristic %s\n", charUUID.toString().c_str());
         client->disconnect();
-        client->setClientCallbacks(nullptr);
-        NimBLEDevice::deleteClient(client);
-        client = nullptr;
         return false;
     }
 
     if (characteristic->canRead())
     {
         std::string val = characteristic->readValue();
-        _log("[ble_connect] Read value size: %d\n", (int)val.size());
+        _log("[ble_attach] Read value size: %d\n", (int)val.size());
     }
 
     if (characteristic->canNotify())
     {
-        bool notify = characteristic->subscribe(true, notifyCallback);
-        if (!notify)
+        if (!characteristic->subscribe(true, notifyCallback))
         {
-            _log("[ble_connect] failed to subscribe");
+            _log("[ble_attach] failed to subscribe\n");
             client->disconnect();
-            client->setClientCallbacks(nullptr);
-            NimBLEDevice::deleteClient(client);
-            client = nullptr;
             return false;
         }
     }
 
+    JsonDocument &app = status();
+
+    // remember the identity address so the next reconnect targets the bond
+    NimBLEConnInfo connInfo = client->getConnInfo();
+    if (connInfo.isBonded())
+    {
+        NimBLEAddress id = connInfo.getIdAddress();
+        String address = id.toString().c_str();
+        if (address != app["config"]["ble"]["address"].as<String>() ||
+            id.getType() != app["config"]["ble"]["type"].as<int>())
+        {
+            _log("[ble_attach] Saving keyboard identity address %s type %d\n", address.c_str(), id.getType());
+            app["config"]["ble"]["address"] = address;
+            app["config"]["ble"]["type"] = id.getType();
+            config_save();
+        }
+    }
+
+    ble_attached = true;
+    app["ble_connected"] = true;
+    app["clear"] = true; // refresh the pairing screen status
+    _log("[ble_attach] BLE keyboard ready\n");
+
     return true;
+}
+
+// Forget every bonded keyboard, used when unpairing
+void ble_forget()
+{
+    // bonds live in NVS, so the stack must be up to delete them even when
+    // BLE keyboard is disabled
+    ble_init(ble_name);
+    NimBLEDevice::deleteAllBonds();
 }

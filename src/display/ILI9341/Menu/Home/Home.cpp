@@ -3,6 +3,9 @@
 #include "app/app.h"
 #include "display/display.h"
 #include "keyboard/keyboard.h"
+#ifdef REV5
+#include "keyboard/BLE/ble.h"
+#endif
 
 //
 #include "service/Editor/Editor.h"
@@ -47,7 +50,10 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
 #ifdef REV5
     ptft->println(" [K] KEY LAYOUT - " + keyboard_layout);
-    ptft->println(" [M] BLE KEYBOARD");
+    if (ble_enabled())
+        ptft->println(" [M] BLE KEYBOARD - ON");
+    else
+        ptft->println(" [M] BLE KEYBOARD - OFF");
 #endif
 
 #ifdef REV6

@@ -35,7 +35,7 @@ int display_ILI9341_core()
   if (screen == MENUSCREEN)
   {
     int menu = app["menu"]["state"].as<int>();
-    if (menu == MENU_SYNC || menu == MENU_WEB)
+    if (menu == MENU_SYNC || menu == MENU_WEB || menu == MENU_BLUETOOTH)
       return 0;
   }
 

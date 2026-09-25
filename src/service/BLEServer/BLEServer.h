@@ -14,3 +14,6 @@ void BLEServer_loop();
 
 // scan devices
 void BLEServer_scan();
+
+// pair with a keyboard found in pairing mode
+bool BLEServer_auto_pair();

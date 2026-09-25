@@ -8,6 +8,16 @@
 
 //
 #include "service/BLEServer/BLEServer.h"
+#include "keyboard/BLE/ble.h"
+
+// Keep scanning and pair automatically with the first keyboard found in
+// pairing mode. Rev.5 has no keys to pick from a list.
+static void PairBLE_search()
+{
+    JsonDocument &app = status();
+    app["ble_auto_pair"] = true;
+    BLEServer_setup("Micro Journal 5");
+}
 
 //
 void PairBLE_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
@@ -18,16 +28,9 @@ void PairBLE_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     //
     JsonDocument &app = status();
 
-    // Check if already connected device exists
-    if (app["config"]["ble"]["name"].is<const char *>())
-    {
-        // When it is already paired then show UNPAIR
-    }
-    else
-    {
-        // Start Scanning
-        BLEServer_setup("Micro Journal 5");
-    }
+    // search only when the user enabled BLE keyboard and nothing is paired
+    if (ble_enabled() && !app["config"]["ble"]["name"].is<const char *>())
+        PairBLE_search();
 }
 
 //
@@ -39,79 +42,55 @@ void PairBLE_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     //
     ptft->setTextColor(TFT_WHITE, TFT_BLACK);
-    ptft->println("Pairing BLE Keyboard ");
+    ptft->println("BLE Keyboard ");
     ptft->println("");
 
-    // RENDER based on the screen index
     //
     JsonDocument &app = status();
+    bool paired = app["config"]["ble"]["name"].is<const char *>();
 
-    // UNPAIR
-
-    // Check if already connected device exists
-    if (app["config"]["ble"]["name"].is<const char *>())
+    if (!ble_enabled())
     {
-        const char *name = app["config"]["ble"]["name"].as<const char *>();
-        ptft->printf("[MENU, M] UNPAIR - %s", name);
+        ptft->println("BLE keyboard is disabled.");
+        if (paired)
+            ptft->printf("Keyboard: %s\n", app["config"]["ble"]["name"].as<const char *>());
+
         ptft->println("");
+        ptft->println("[M] ENABLE BLE KEYBOARD");
+    }
+    else if (paired)
+    {
+        ptft->printf("Keyboard: %s\n", app["config"]["ble"]["name"].as<const char *>());
+
+        if (app["ble_connected"].as<bool>())
+        {
+            ptft->println("Status: Connected");
+        }
+        else
+        {
+            ptft->println("Status: Connecting ...");
+            ptft->println("Press a key on the keyboard to wake it up");
+        }
+
+        ptft->println("");
+        ptft->println("[M] DISABLE BLE KEYBOARD");
     }
     else
     {
-        //
-        int ble_status = app["ble_state"].as<int>();
-        _debug("[PairBLE_render] ble_state %d\n", ble_status);
-        if (ble_status == BLE_CONFIG_LIST || ble_status == BLE_CONFIG_NO_DEVICES)
-        {
-            // display the connected devices
-            PairBLE_render_list(ptft, pu8f);
-        }
+        ptft->println("Put the keyboard in pairing mode.");
+        ptft->println("It will be paired automatically.");
+        ptft->println("");
+        ptft->println("Searching ...");
+        ptft->println("");
+        ptft->println("[M] DISABLE BLE KEYBOARD");
     }
+
+    if (paired)
+        ptft->println("[R] REMOVE BLE PAIR");
 
     // BACK
     ptft->println();
     ptft->println("[B] BACK ");
-}
-
-//
-void PairBLE_render_list(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
-{
-    //
-    JsonDocument &app = status();
-
-    // retrieve ble keyboard devices
-    JsonArray devices = app["ble_devices"].as<JsonArray>();
-
-    // if BLE_CONFIG_NO_DEVICES
-    int ble_state = app["ble_state"].as<int>();
-    _debug("[PairBLE_render_list] ble_state %d\n", ble_state);
-    if (ble_state == BLE_CONFIG_NO_DEVICES)
-    {
-        ptft->println("No Devices Found");
-    }
-    else if (devices.size() == 0)
-    {
-        ptft->println("Scanning ...");
-    }
-    else if (devices.size() > 0)
-    {
-        // printing devices
-        _log("Rendering device list: %d\n", devices.size());
-        ptft->println("Press number to pair with");
-        for (int i = 0; i < devices.size(); i++)
-        {
-            if (i == 0)
-            {
-                const char *name = devices[i]["name"].as<const char *>();
-                ptft->printf("  [MENU, %d] %s\n", i + 1, name);
-            }
-            else
-            {
-                const char *name = devices[i]["name"].as<const char *>();
-                ptft->printf("  [%d] %s\n", i + 1, name);
-            }
-        }
-        ptft->println("");
-    }
 }
 
 //
@@ -126,57 +105,41 @@ void PairBLE_keyboard(char key)
     //
     Menu_clear();
 
-    // UNPAIR
-    if (app["config"]["ble"]["name"].is<const char *>())
+    bool paired = app["config"]["ble"]["name"].is<const char *>();
+
+    // ENABLE / DISABLE BLE KEYBOARD
+    if (key == 'm' || key == 'M' || key == MENU)
     {
-        if (key == 'm' || key == MENU)
+        if (ble_enabled())
         {
-            //
-            if (app["config"]["ble"].is<JsonObject>())
-            {
-                //
-                app["config"].remove("ble");
+            app["config"]["ble_enabled"] = false;
+            config_save();
 
-                // save config
-                config_save();
+            // restart to shut down the BLE radio
+            ESP.restart();
+        }
+        else
+        {
+            app["config"]["ble_enabled"] = true;
+            config_save();
 
-                // restart
-                ESP.restart();
-            }
+            // a paired keyboard is reconnected by ble_loop()
+            if (!paired)
+                PairBLE_search();
         }
     }
 
-    //
-    if ((key >= '1' && key <= '9') || key == MENU)
+    // REMOVE BLE PAIR
+    else if ((key == 'r' || key == 'R') && paired)
     {
-        // when menu is pressed then chose the first keyboard
-        if (key == MENU)
-            key = '1';
+        // forget the stored bond so a new keyboard can be paired
+        ble_forget();
+        app["config"].remove("ble");
 
-        // device is chosen
+        // save config
+        config_save();
 
-        // retrieve ble keyboard devices
-        JsonArray devices = app["ble_devices"].as<JsonArray>();
-
-        int selectedIndex = key - '1';
-        if (devices.size() > selectedIndex)
-        {
-            // save the device id
-            app["config"]["ble"]["address"] = devices[selectedIndex]["address"];
-            app["config"]["ble"]["name"] = devices[selectedIndex]["name"];
-            app["config"]["ble"]["type"] = devices[selectedIndex]["type"];
-
-            //
-            _log("Saving BLE keyboard: address: %s name: %s type: %d\n",
-                 app["config"]["ble"]["address"].as<const char *>(),
-                 app["config"]["ble"]["name"].as<const char *>(),
-                 app["config"]["ble"]["type"].as<int>());
-
-            /// save config
-            config_save();
-
-            // restart
-            ESP.restart();
-        }
+        // restart
+        ESP.restart();
     }
 }

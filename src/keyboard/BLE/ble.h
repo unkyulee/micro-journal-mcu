@@ -6,8 +6,11 @@
 // Initialize BLE DEVICE
 void ble_init(const char* name);
 
-// Connect to BLE Keyboard
-bool ble_connect(const char *address, int type);
+// Forget all bonded keyboards (unpair)
+void ble_forget();
+
+// BLE keyboard is enabled by the user
+bool ble_enabled();
 
 //
 void ble_setup(const char* adName);

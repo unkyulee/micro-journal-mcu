@@ -385,7 +385,7 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     if (app["config"]["ble"]["address"].is<const char *>())
     {
         // CHECK BLE Keyboard Connected
-        ptft->setCursor(230, STATUSBAR_Y + 6, 1);
+        ptft->setCursor(200, STATUSBAR_Y + 6, 1);
         if (app["ble_connected"].as<bool>())
         {
             ptft->setTextColor(TFT_GREEN, background_color);
