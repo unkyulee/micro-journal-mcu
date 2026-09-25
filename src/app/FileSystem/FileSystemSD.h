@@ -31,6 +31,8 @@ public:
     {
         return SD.rename(pathFrom, pathTo);
     }
+    uint64_t totalBytes() override { return SD.totalBytes(); }
+    uint64_t usedBytes() override { return SD.usedBytes(); }
 };
 
 #endif

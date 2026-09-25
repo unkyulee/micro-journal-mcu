@@ -43,6 +43,7 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     }
 
     ptft->println(" [W] WIFI");
+    ptft->println(" [E] WEB EDITOR");
 
 #ifdef REV5
     ptft->println(" [K] KEY LAYOUT - " + keyboard_layout);
@@ -142,6 +143,12 @@ void Home_keyboard(char key)
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_WIFI;
+    }
+
+    else if (key == 'e' || key == 'E')
+    {
+        // edit files from a browser over wifi
+        app["menu"]["state"] = MENU_WEB;
     }
 
 #ifdef REV6

@@ -176,7 +176,7 @@ public:
         return FFat.rename(pathFrom, pathTo);
     }
 
-    size_t totalBytes()
+    uint64_t totalBytes() override
     {
         if (!_mounted)
         {
@@ -186,7 +186,7 @@ public:
         return FFat.totalBytes();
     }
 
-    size_t usedBytes()
+    uint64_t usedBytes() override
     {
         if (!_mounted)
         {

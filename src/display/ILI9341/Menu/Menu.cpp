@@ -15,6 +15,7 @@
 #include "PairBLE/PairBLE.h"
 #include "Language/Language.h"
 #include "Storage/Storage.h"
+#include "WebEditor/WebEditor.h"
 
 // properties
 #define MENUBAR_COLOR TFT_RED
@@ -126,6 +127,13 @@ void Menu_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
             Foreground_setup(ptft, pu8f);
 
         Foreground_render(ptft, pu8f);
+    }
+    else if (menu_state == MENU_WEB)
+    {
+        if (menu_state_prev != menu_state)
+            WebEditor_setup(ptft, pu8f);
+
+        WebEditor_render(ptft, pu8f);
     }
 
 #ifdef REV5
@@ -260,6 +268,13 @@ void Menu_keyboard(char key)
         return;
     }
 #endif
+
+    // Web editor
+    else if (menu_state == MENU_WEB)
+    {
+        WebEditor_keyboard(key);
+        return;
+    }
 }
 
 //

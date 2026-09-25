@@ -34,7 +34,7 @@ int display_EPD_core()
     if (screen == MENUSCREEN)
     {
         int menu = app["menu"]["state"].as<int>();
-        if (menu == MENU_SYNC)
+        if (menu == MENU_SYNC || menu == MENU_WEB)
             return 0;
     }
 

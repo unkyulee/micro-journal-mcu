@@ -24,6 +24,7 @@
 
 #ifdef BOARD_ESP32_S3
 #include "service/Sync/Sync.h"
+#include "service/FileServer/FileServer.h"
 #endif
 
 #ifdef BATTERY
@@ -175,6 +176,9 @@ void app_loop()
 
 #ifdef BOARD_ESP32_S3
     sync_loop();
+
+    // web file explorer and editor
+    fileserver_loop();
 #endif
 }
 

@@ -29,6 +29,7 @@
 #define MENU_BRIGHTNESS 13
 #define MENU_INFO 14
 #define MENU_LANGUAGE 15
+#define MENU_WEB 16
 
 // MENU button
 #define FN 28

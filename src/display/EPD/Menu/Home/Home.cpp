@@ -37,6 +37,11 @@ void Home_render()
     cursorY += 35;
     writeln((GFXfont *)&systemFont, " [K] Keyboard Layout", &cursorX, &cursorY, display_EPD_framebuffer());
 
+    // Web Editor
+    cursorX = 10;
+    cursorY += 35;
+    writeln((GFXfont *)&systemFont, " [E] Web Editor", &cursorX, &cursorY, display_EPD_framebuffer());
+
     // Bluetooth Keyboard
     cursorX = 10;
     cursorY += 35;
@@ -128,6 +133,13 @@ void Home_keyboard(char key)
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_LAYOUT;
+    }
+
+    // web editor
+    else if (key == 'e' || key == 'E')
+    {
+        // edit files from a browser over wifi
+        app["menu"]["state"] = MENU_WEB;
     }
 
     // Bluetooth Keyboard

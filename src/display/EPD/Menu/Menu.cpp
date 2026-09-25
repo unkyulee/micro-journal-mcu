@@ -9,6 +9,7 @@
 #include "Wifi/Wifi.h"
 #include "Layout/Layout.h"
 #include "Sync/Sync.h"
+#include "WebEditor/WebEditor.h"
 
 // state
 bool menu_clear = false;
@@ -121,6 +122,15 @@ void Menu_render()
         Sync_render();
     }
 
+    // Web editor
+    else if (menu_state == MENU_WEB)
+    {
+        if (menu_state_prev != menu_state)
+            WebEditor_setup();
+
+        WebEditor_render();
+    }
+
     // render frambuffer
     display_draw_buffer();
 
@@ -173,6 +183,13 @@ void Menu_keyboard(char key)
     else if (menu_state == MENU_SYNC)
     {
         Sync_keyboard(key);
+        return;
+    }
+
+    // Web editor
+    else if (menu_state == MENU_WEB)
+    {
+        WebEditor_keyboard(key);
         return;
     }
 
