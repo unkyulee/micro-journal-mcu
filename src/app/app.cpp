@@ -10,8 +10,8 @@
 #include "app/FileSystem/FileSystemSD.h"
 #endif
 
-#ifdef USE_FAT
-#include "app/FileSystem/FileSystemFAT.h"
+#ifdef USE_LITTLEFS
+#include "app/FileSystem/FileSystemLittleFS.h"
 #endif
 
 #ifdef BOARD_PICO
@@ -213,9 +213,9 @@ FileSystem *gfs()
 
 #endif
 
-#ifdef USE_FAT
-        // ESP32 internal flash, FAT partition "storage"
-        fileSystem = new FileSystemFAT("storage");
+#ifdef USE_LITTLEFS
+        // ESP32 internal flash, LittleFS on partition "storage"
+        fileSystem = new FileSystemLittleFS("storage");
 #endif
 
         if (!fileSystem->begin())

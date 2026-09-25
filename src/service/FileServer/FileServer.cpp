@@ -239,8 +239,8 @@ static void fileserver_mark_changed(const String &name)
 }
 
 // replace target with tmp keeping the original until the new one is in place
-// exists() and remove() log an error for missing files on ESP32,
-// so the backup is only cleared when a leftover one blocks the rename
+// a leftover backup is only cleared when it blocks the rename, since some
+// file systems log an error for every remove() of a missing file
 static bool fileserver_commit(const String &tmp, const String &target)
 {
     String bak = target + FILESERVER_BAK_SUFFIX;

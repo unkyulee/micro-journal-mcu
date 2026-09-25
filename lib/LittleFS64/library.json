@@ -1,0 +1,12 @@
+{
+  "name": "LittleFS64",
+  "version": "1.0.0",
+  "description": "LittleFS on an ESP32 data partition with a large (64KB) block size, exposed as an Arduino fs::FS. Bundles littlefs v2.11 (BSD-3-Clause, see src/littlefs/LICENSE.md).",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "build": {
+    "flags": [
+      "-DLFS_NO_DEBUG"
+    ]
+  }
+}
