@@ -33,12 +33,12 @@ void WebEditor_render()
     cursorY += 20;
 
     //
-    String lines[8];
-    int count = fileserver_status_lines(lines, 8);
+    String lines[10];
+    int count = fileserver_status_lines(lines, 10);
     for (int i = 0; i < count; i++)
     {
         cursorX = 30;
-        cursorY += 40;
+        cursorY += 34;
 
         if (lines[i].isEmpty())
             continue;

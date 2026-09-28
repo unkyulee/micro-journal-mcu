@@ -55,6 +55,9 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .head h1 { margin: 0; font: 400 26px/1.2 var(--font-serif); letter-spacing: .01em; }
 .head .sub { color: var(--faint); font-size: 13px; margin-top: 2px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn:disabled { opacity: .5; cursor: default; }
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 14px; }
 .notice.error { background: var(--danger-soft); color: var(--danger); }
 .group { margin-bottom: 18px; }
@@ -104,6 +107,7 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></symbol>
   <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V5m-5 5 5-5 5 5M5 20h14"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></symbol>
@@ -116,6 +120,8 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
       <h1>Micro Journal</h1>
       <div class="sub" id="version">Connecting&hellip;</div>
     </div>
+    <button class="btn" id="btnUpload" title="Add files from this computer"><svg><use href="#i-up"/></svg>Upload</button>
+    <input type="file" id="uploadInput" multiple hidden>
   </div>
   <div class="notice" id="notice" hidden></div>
   <div id="files"></div>
@@ -138,10 +144,14 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
 (() => {
   "use strict";
 
-  // save shortly after typing pauses, but never wait longer than MAX_WAIT
-  // while typing continuously - keeps flash writes to a few per minute
-  const IDLE_MS = 2000;
-  const MAX_WAIT_MS = 10000;
+  // autosave waits for a pause in typing, and never runs sooner than
+  // MIN_INTERVAL after the previous save - every save rewrites the whole file
+  // and erases flash, so the device gets at most a few requests per minute.
+  // Typing without any pause still saves once MAX_WAIT has passed.
+  // Leaving the file, Ctrl+S, hiding the tab or closing the page save at once.
+  const IDLE_MS = 3000;
+  const MIN_INTERVAL_MS = 20000;
+  const MAX_WAIT_MS = 60000;
   const RETRY_MIN_MS = 3000;
   const RETRY_MAX_MS = 60000;
   const TEXT_EXT = ["txt", "md", "markdown", "json", "csv", "log", "ini", "cfg", "conf", "yml", "yaml", "xml", "html", "htm"];
@@ -155,6 +165,7 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
   let saveTimer = 0;
   let inflight = null;
   let retryDelay = 0;
+  let lastSaveAt = 0;
   let saveState = "";
 
   // ---------- helpers ----------
@@ -361,8 +372,12 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
     if (!isDirty()) return;
     const now = Date.now();
     if (!doc.dirtySince) doc.dirtySince = now;
-    const wait = Math.max(0, Math.min(IDLE_MS, doc.dirtySince + MAX_WAIT_MS - now));
-    saveTimer = setTimeout(save, wait);
+
+    // input keeps pushing the idle point back, the other two are fixed
+    const earliest = lastSaveAt + MIN_INTERVAL_MS;
+    const idle = Math.max(now + IDLE_MS, earliest);
+    const latest = Math.max(doc.dirtySince + MAX_WAIT_MS, earliest);
+    saveTimer = setTimeout(save, Math.max(0, Math.min(idle, latest) - now));
   }
 
   async function save() {
@@ -382,6 +397,7 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
       await inflight;
       d.saved = text;
       retryDelay = 0;
+      lastSaveAt = Date.now();
       if (doc === d) {
         if (isDirty()) { d.dirtySince = Date.now(); setState("dirty", "Edited"); schedule(); }
         else { d.dirtySince = 0; setState("saved", "Saved " + fmtTime(new Date())); }
@@ -451,8 +467,47 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
     refresh();
   }
 
+  // the device keeps plain files in the root folder only
+  function uploadName(fileName) {
+    const name = "/" + fileName.trim();
+    const bad = /[\/\\:*?"<>|]/.test(name.slice(1)) || name.includes("..") ||
+      Array.from(name).some((c) => c < " ") || name.length < 2 || name.length > 64;
+    return bad ? "" : name;
+  }
+
+  async function uploadFiles(list) {
+    const button = $("btnUpload");
+    button.disabled = true;
+    try {
+      for (const file of list) {
+        const name = uploadName(file.name);
+        if (!name) { toast(file.name + ": this file name can't be stored on the device"); continue; }
+        if (fileInfo(name) && !confirm("Replace " + baseName(name) + " on the device?")) continue;
+
+        toast("Uploading " + file.name + " (" + fmtSize(file.size) + ")...");
+        try {
+          const headers = Object.assign(uploadHeaders(name), { "X-Upload": "1" });
+          await api("POST", fileUrl(name), file, headers);
+          toast("Uploaded " + file.name);
+        } catch (e) {
+          // .json files are checked on the device, broken ones are refused
+          toast("Couldn't upload " + file.name + ": " + e.message);
+        }
+      }
+    } finally {
+      button.disabled = false;
+      refresh();
+    }
+  }
+
   // ---------- wiring ----------
   $("btnBack").onclick = () => closeFile(false);
+  $("btnUpload").onclick = () => $("uploadInput").click();
+  $("uploadInput").onchange = (ev) => {
+    const files = Array.from(ev.target.files);
+    ev.target.value = "";
+    if (files.length) uploadFiles(files);
+  };
 
   document.addEventListener("keydown", (ev) => {
     if (!doc) return;

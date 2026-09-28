@@ -26,6 +26,9 @@
 // target file of an upload, URL encoded
 #define FILESERVER_NAME_HEADER "X-File-Name"
 
+// set to 1 by the upload button, the only request allowed to create a file
+#define FILESERVER_UPLOAD_HEADER "X-Upload"
+
 // requests come from the display core, the work happens in fileserver_loop
 static volatile bool startRequested = false;
 static volatile bool stopRequested = false;
@@ -92,20 +95,30 @@ int fileserver_status_lines(String *lines, int max)
     {
         add("Closing ...");
     }
+    else if (state == FILESERVER_RUNNING && app["fileserver"]["ap_ssid"].is<const char *>())
+    {
+        // hotspot: the PC has to switch to the journal's own WiFi first
+        add("No saved WiFi network nearby,");
+        add("so the journal made its own WiFi.");
+        add("1. On your PC or phone, join WiFi:");
+        add(format("   %s", app["fileserver"]["ap_ssid"] | ""));
+        add(format("   Password: %s", app["fileserver"]["ap_password"] | ""));
+        add("2. Then open in your browser:");
+        add(format("   %s", app["fileserver"]["url"] | ""));
+
+        if (app["fileserver"]["login"] | false)
+            add("   Login: " FILESERVER_USER " / web password");
+
+        add("");
+        add("Press ESC to finish");
+    }
     else if (state == FILESERVER_RUNNING)
     {
         add("Open in a browser:");
         add(app["fileserver"]["url"] | "");
 
-        if (app["fileserver"]["ap_ssid"].is<const char *>())
-        {
-            add(format("WiFi: %s", app["fileserver"]["ap_ssid"] | ""));
-            add(format("Password: %s", app["fileserver"]["ap_password"] | ""));
-        }
-        else if (app["fileserver"]["mdns"] | false)
-        {
+        if (app["fileserver"]["mdns"] | false)
             add("or http://" FILESERVER_HOSTNAME ".local");
-        }
 
         if (app["fileserver"]["login"] | false)
             add("Login: " FILESERVER_USER " / web password");
@@ -395,8 +408,10 @@ static void fileserver_handle_upload()
             return;
         }
 
-        // the editor only changes existing files, it never creates new ones
-        if (!gfs()->exists(name.c_str()))
+        // the editor only changes existing files,
+        // new files come in through the upload button
+        bool upload = server->header(FILESERVER_UPLOAD_HEADER) == "1";
+        if (!upload && !gfs()->exists(name.c_str()))
         {
             uploadError = "File not found";
             return;
@@ -670,8 +685,8 @@ static void fileserver_start()
     server = new WebServer(80);
 
     // headers are the only request data available while a raw body streams in
-    static const char *collectedHeaders[] = {FILESERVER_NAME_HEADER};
-    server->collectHeaders(collectedHeaders, 1);
+    static const char *collectedHeaders[] = {FILESERVER_NAME_HEADER, FILESERVER_UPLOAD_HEADER};
+    server->collectHeaders(collectedHeaders, 2);
 
     server->on("/", HTTP_GET, fileserver_handle_index);
     server->on("/api/list", HTTP_GET, fileserver_handle_list);

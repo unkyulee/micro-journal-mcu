@@ -26,8 +26,8 @@ void WebEditor_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     u8->println("");
 
     //
-    String lines[8];
-    int count = fileserver_status_lines(lines, 8);
+    String lines[10];
+    int count = fileserver_status_lines(lines, 10);
     for (int i = 0; i < count; i++)
     {
         u8->print(" ");
