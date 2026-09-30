@@ -51,9 +51,10 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 #ifdef REV5
     ptft->println(" [K] KEY LAYOUT - " + keyboard_layout);
     if (ble_enabled())
-        ptft->println(" [M] BLE KEYBOARD - ON");
+        ptft->println(" [M] PAIR BLE KBD - ON");
     else
-        ptft->println(" [M] BLE KEYBOARD - OFF");
+        ptft->println(" [M] PAIR BLE KBD - OFF");
+    ptft->println(" [T] SEND");
 #endif
 
 #ifdef REV6
@@ -140,6 +141,11 @@ void Home_keyboard(char key)
     {
         // move to bluetooth setup
         app["menu"]["state"] = MENU_BLUETOOTH;
+    }
+    else if (key == 't' || key == 'T')
+    {
+        // act as a bluetooth keyboard to SEND text to a computer
+        app["screen"] = KEYBOARDSCREEN;
     }
 
 #endif

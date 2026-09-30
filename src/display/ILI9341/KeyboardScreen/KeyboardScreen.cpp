@@ -79,6 +79,14 @@ static bool sendLeftPressed = false;
 static bool sendRightPressed = false;
 static bool sendChordActive = false;
 
+#ifdef REV5
+// Rev.5 keys come from the USB/BLE keyboard already translated by the locale,
+// with the HID keycode as the index. Remember what each keycode pressed so a
+// shift change before key-up still releases the same BLE key.
+static uint8_t activeRev5Keys[256] = {};
+static bool sendRequested = false;
+#endif
+
 static int KeyboardScreen_resolveKey(int keypadKey, int mappedKey)
 {
     // The keypad has already applied keyboard.json, shift and locale handling.
@@ -136,6 +144,13 @@ void KeyboardScreen_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     sendRightPressed = false;
     sendChordActive = false;
 
+#ifdef REV5
+    memset(activeRev5Keys, 0, sizeof(activeRev5Keys));
+    sendRequested = false;
+
+    // Setup Bluetooth Keyboard
+    bleKeyboard.setName("Micro Journal 5");
+#else
     // load keyboard layout
     // Load Custom Keybaord Layout
     const char *keys[] = {"main", "lower", "raise"};
@@ -148,6 +163,7 @@ void KeyboardScreen_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // Setup Bluetooth Keyboard
     bleKeyboard.setName("Micro Journal 6");
+#endif
     bleKeyboard.begin();
     _log("Bluetooth Keyboard Started\n");
 }
@@ -199,18 +215,117 @@ void KeyboardScreen_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
         ptft->setTextColor(TFT_CYAN, TFT_BLACK);
         ptft->setCursor(40, 140);
         ptft->println("Turn off device to end session.");
+#ifdef REV5
+        ptft->setCursor(40, 160);
+        ptft->println("Press MENU or ESC to SEND.");
+        ptft->setCursor(40, 180);
+        ptft->println("Press again to stop sending.");
+#else
         ptft->setCursor(40, 160);
         ptft->println("Press top-left and top-right keys");
         ptft->setCursor(40, 180);
         ptft->println("simultaneously to SEND.");
+#endif
         ptft->setCursor(40, 200);
         ptft->println("Hold ESC for 2 seconds to exit.");
     }
 }
 
+#ifdef REV5
+// keyboard message from the USB/BLE keyboard or the front buttons of Rev.5
+static void KeyboardScreen_keyboard_rev5(int key, bool pressed, int index)
+{
+    JsonDocument &app = status();
+
+    // The front MENU button and the ESC key both arrive as MENU.
+    // Tap to SEND (or stop sending), hold ESC to exit.
+    if (key == MENU)
+    {
+        if (pressed)
+        {
+            if (!escPressed)
+            {
+                escPressedAt = millis();
+                escPressed = true;
+            }
+        }
+        else if (escPressed)
+        {
+            const uint32_t heldFor = millis() - escPressedAt;
+            escPressed = false;
+
+            if (heldFor >= ESC_LONG_PRESS_MS)
+            {
+                KeyboardScreen_exitBleKeyboardMode();
+            }
+            else if (sendRequested && !app["send_finished"].as<bool>())
+            {
+                // sending in progress
+                app["send_stop"] = true;
+            }
+            else if (bleKeyboard.isConnected())
+            {
+                memset(activeRev5Keys, 0, sizeof(activeRev5Keys));
+                bleKeyboard.releaseAll();
+                sendRequested = true;
+                app["task"] = "send_start";
+                app["send_stop"] = false;
+                app["send_finished"] = false;
+            }
+        }
+
+        return;
+    }
+
+    // no need any action when bluetooth keyboard is not connected
+    if (!bleKeyboard.isConnected())
+        return;
+
+    // any key pressed is going to stop sending text
+    app["send_stop"] = true;
+
+    // Characters are sent as translated by the locale. Other keys (arrows,
+    // home, page up...) are sent as the raw HID keycode, which BleKeyboard
+    // takes offset by 136.
+    int bleKey = KeyboardScreen_resolveKey(key, index >= 0 && index < 120 ? index + 136 : 0);
+
+    // keys without a keycode (e.g. a dead key replayed by the locale) have no
+    // separate release event, so tap them
+    if (index < 0 || index > 255)
+    {
+        if (pressed && bleKey != 0)
+        {
+            bleKeyboard.press(bleKey);
+            bleKeyboard.release(bleKey);
+        }
+        return;
+    }
+
+    if (pressed)
+    {
+        if (bleKey == 0)
+            return;
+        activeRev5Keys[index] = bleKey;
+        bleKeyboard.press(bleKey);
+    }
+    else
+    {
+        int pressedKey = activeRev5Keys[index];
+        activeRev5Keys[index] = 0;
+        if (pressedKey != 0)
+            bleKeyboard.release(pressedKey);
+    }
+}
+#endif
+
 // keyboard message will come from Rev.6 via this function.
 void KeyboardScreen_keyboard(int key, bool pressed, int index)
 {
+#ifdef REV5
+    KeyboardScreen_keyboard_rev5(key, pressed, index);
+    return;
+#endif
+
     if (index < 0 || index >= TOTAL_KEYS)
     {
         _log("KeyboardScreen_keyboard: invalid key index %d\n", index);
