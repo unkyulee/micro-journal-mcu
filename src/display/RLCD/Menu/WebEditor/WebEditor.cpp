@@ -22,7 +22,7 @@ void WebEditor_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 {
     // header
     u8->setCursor(0, 50);
-    u8->println(" WEB EDITOR ");
+    u8->println(" DRIVE MODE ");
     u8->println("");
 
     //

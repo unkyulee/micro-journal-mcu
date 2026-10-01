@@ -13,7 +13,7 @@ bool firmware_check()
     // load app status
     JsonDocument &app = status();
 
-    // Check if there are firmware.bin in the SD card
+    // Check if there is a firmware file in the storage
     // FIRMWARE is defiined in platformio.ini
     _log("Checking for firmware update: %s\n", FIRMWARE);
     if (gfs()->exists(FIRMWARE))

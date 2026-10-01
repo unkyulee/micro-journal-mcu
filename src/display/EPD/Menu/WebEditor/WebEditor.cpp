@@ -27,7 +27,7 @@ void WebEditor_render()
     int cursorY = 120;
     writeln(
         (GFXfont *)&systemFont,
-        "WEB EDITOR",
+        "DRIVE MODE",
         &cursorX, &cursorY,
         display_EPD_framebuffer());
     cursorY += 20;

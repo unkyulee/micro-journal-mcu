@@ -46,7 +46,7 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     }
 
     ptft->println(" [W] WIFI");
-    ptft->println(" [E] WEB EDITOR");
+    ptft->println(" [E] DRIVE MODE");
 
 #ifdef REV5
     ptft->println(" [K] KEY LAYOUT - " + keyboard_layout);

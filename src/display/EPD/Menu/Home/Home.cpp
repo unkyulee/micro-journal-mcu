@@ -37,10 +37,10 @@ void Home_render()
     cursorY += 35;
     writeln((GFXfont *)&systemFont, " [K] Keyboard Layout", &cursorX, &cursorY, display_EPD_framebuffer());
 
-    // Web Editor
+    // Drive Mode (web editor over WiFi)
     cursorX = 10;
     cursorY += 35;
-    writeln((GFXfont *)&systemFont, " [E] Web Editor", &cursorX, &cursorY, display_EPD_framebuffer());
+    writeln((GFXfont *)&systemFont, " [E] Drive Mode", &cursorX, &cursorY, display_EPD_framebuffer());
 
     // Bluetooth Keyboard
     cursorX = 10;

@@ -24,7 +24,7 @@ void WebEditor_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     ptft->setCursor(0, 30, 2);
     ptft->setTextSize(1);
     ptft->setTextColor(TFT_WHITE, TFT_BLACK);
-    ptft->println(" WEB EDITOR ");
+    ptft->println(" DRIVE MODE ");
     ptft->println("");
 
     //
