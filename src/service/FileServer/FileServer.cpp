@@ -48,6 +48,14 @@ static String uploadTarget;
 static String uploadError;
 static bool uploadComplete = false;
 
+// Receiving over WiFi and erasing the internal flash at the same time
+// crashes the device (double exception while the flash cache is off), so an
+// upload is collected in PSRAM first and written out once the transfer is done.
+// Without PSRAM, or when it doesn't fit, the body streams straight to the file.
+static uint8_t *uploadBuffer = nullptr;
+static size_t uploadBufferSize = 0;
+static size_t uploadBufferUsed = 0;
+
 //
 static void fileserver_start();
 static void fileserver_stop();
@@ -374,7 +382,57 @@ static void fileserver_handle_read()
     file.close();
 }
 
-// receives the raw request body chunk by chunk into the temp file
+// TEMPORARY diagnostics for the crash after large uploads:
+// reports the lowest free stack this task ever had and whether the heap
+// is still intact, so a memory overwrite can be traced to one step
+static void fileserver_check(const char *stage)
+{
+    bool intact = heap_caps_check_integrity_all(true);
+    _log("[fileserver] %s: heap %s, least free stack %u bytes\n",
+         stage,
+         intact ? "ok" : "CORRUPT",
+         (unsigned int)uxTaskGetStackHighWaterMark(NULL));
+}
+
+//
+static void fileserver_free_buffer()
+{
+    if (uploadBuffer != nullptr)
+        free(uploadBuffer);
+
+    uploadBuffer = nullptr;
+    uploadBufferSize = 0;
+    uploadBufferUsed = 0;
+}
+
+// write the collected upload to the temp file, WiFi is quiet by now
+static void fileserver_flush_buffer()
+{
+    File file = gfs()->open((uploadTarget + FILESERVER_TMP_SUFFIX).c_str(), "w");
+    if (!file)
+    {
+        uploadError = "Unable to create the file";
+        return;
+    }
+
+    const size_t chunk = 4096;
+    for (size_t offset = 0; offset < uploadBufferUsed; offset += chunk)
+    {
+        size_t size = min(chunk, uploadBufferUsed - offset);
+        if (file.write(uploadBuffer + offset, size) != size)
+        {
+            uploadError = "Write failed. Storage may be full";
+            break;
+        }
+
+        // let the network tasks keep the connection alive
+        delay(1);
+    }
+
+    file.close();
+}
+
+// receives the raw request body chunk by chunk
 // the page posts application/octet-stream, which the web server reads in
 // 1.4KB blocks - far quicker than parsing a multipart form byte by byte
 static void fileserver_handle_upload()
@@ -389,6 +447,8 @@ static void fileserver_handle_upload()
             uploadFile.close();
             gfs()->remove((uploadTarget + FILESERVER_TMP_SUFFIX).c_str());
         }
+
+        fileserver_free_buffer();
 
         uploadError = "";
         uploadTarget = "";
@@ -422,14 +482,38 @@ static void fileserver_handle_upload()
         }
 
         uploadTarget = name;
-        uploadFile = gfs()->open((name + FILESERVER_TMP_SUFFIX).c_str(), "w");
-        if (!uploadFile)
-            uploadError = "Unable to create the file";
+
+        // the size is known up front, reserve room for the whole body
+        int length = server->clientContentLength();
+        if (length > 0)
+        {
+            uploadBuffer = (uint8_t *)heap_caps_malloc(length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            uploadBufferSize = uploadBuffer != nullptr ? length : 0;
+        }
+
+        if (uploadBuffer == nullptr)
+        {
+            uploadFile = gfs()->open((name + FILESERVER_TMP_SUFFIX).c_str(), "w");
+            if (!uploadFile)
+                uploadError = "Unable to create the file";
+        }
     }
 
     else if (raw.status == RAW_WRITE)
     {
-        if (uploadFile && uploadError.isEmpty())
+        if (uploadBuffer != nullptr)
+        {
+            if (uploadBufferUsed + raw.currentSize <= uploadBufferSize)
+            {
+                memcpy(uploadBuffer + uploadBufferUsed, raw.buf, raw.currentSize);
+                uploadBufferUsed += raw.currentSize;
+            }
+            else
+            {
+                uploadError = "Upload is larger than announced";
+            }
+        }
+        else if (uploadFile && uploadError.isEmpty())
         {
             if (uploadFile.write(raw.buf, raw.currentSize) != raw.currentSize)
                 uploadError = "Write failed. Storage may be full";
@@ -441,6 +525,13 @@ static void fileserver_handle_upload()
         if (uploadFile)
             uploadFile.close();
 
+        // the body is complete, now it is safe to touch the flash
+        fileserver_check("received");
+        if (uploadBuffer != nullptr && uploadError.isEmpty() && !uploadTarget.isEmpty())
+            fileserver_flush_buffer();
+        fileserver_check("written");
+
+        fileserver_free_buffer();
         uploadComplete = true;
     }
 
@@ -451,9 +542,10 @@ static void fileserver_handle_upload()
 
         // the connection dropped and the web server won't call the save
         // handler, so the partial temp file has to be cleaned up here
-        if (!uploadTarget.isEmpty())
+        if (!uploadTarget.isEmpty() && uploadBuffer == nullptr)
             gfs()->remove((uploadTarget + FILESERVER_TMP_SUFFIX).c_str());
 
+        fileserver_free_buffer();
         uploadTarget = "";
         uploadError = "";
     }
@@ -513,7 +605,9 @@ static void fileserver_handle_save()
         }
     }
 
-    if (!fileserver_commit(tmp, target))
+    bool committed = fileserver_commit(tmp, target);
+    fileserver_check("replaced");
+    if (!committed)
     {
         gfs()->remove(tmp.c_str());
         fileserver_send_error(500, "Unable to replace the file");
@@ -735,6 +829,7 @@ static void fileserver_stop()
         uploadFile.close();
         gfs()->remove((uploadTarget + FILESERVER_TMP_SUFFIX).c_str());
     }
+    fileserver_free_buffer();
     uploadTarget = "";
     uploadError = "";
     uploadComplete = false;

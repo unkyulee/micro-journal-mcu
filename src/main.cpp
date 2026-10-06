@@ -38,7 +38,7 @@ void setup()
         xTaskCreatePinnedToCore(
             SecondaryCore,   // Function to run
             "SecondaryCore", // Name
-            8192,            // Stack size
+            16384,           // Stack size - file saves run deep: web server, LittleFS, flash driver
             NULL,            // Parameters
             1,               // Priority
             NULL,            // Task handle
