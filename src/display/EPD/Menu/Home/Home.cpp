@@ -25,6 +25,11 @@ void Home_render()
     int cursorY = 100;
     writeln((GFXfont *)&systemFont, " [W] WIFI", &cursorX, &cursorY, display_EPD_framebuffer());
 
+    // Drive Mode (web editor over WiFi)
+    cursorX = 10;
+    cursorY += 35;
+    writeln((GFXfont *)&systemFont, " [E] Drive Mode", &cursorX, &cursorY, display_EPD_framebuffer());
+
     // SYNC
     if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
     {
@@ -36,11 +41,6 @@ void Home_render()
     cursorX = 10;
     cursorY += 35;
     writeln((GFXfont *)&systemFont, " [K] Keyboard Layout", &cursorX, &cursorY, display_EPD_framebuffer());
-
-    // Drive Mode (web editor over WiFi)
-    cursorX = 10;
-    cursorY += 35;
-    writeln((GFXfont *)&systemFont, " [E] Drive Mode", &cursorX, &cursorY, display_EPD_framebuffer());
 
     // Bluetooth Keyboard
     cursorX = 10;

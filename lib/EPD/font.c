@@ -511,7 +511,7 @@ static void IRAM_ATTR draw_char(const GFXfont *font,
             // index-aligned with it
             bitmap = &shadow->bitmap[shadow->glyphs[glyph - font->glyph].data_offset];
         }
-        else
+        else if (bitmap_size > 0)
         {
             bitmap = (uint8_t *)malloc(bitmap_size);
             if (bitmap == NULL)
@@ -521,6 +521,9 @@ static void IRAM_ATTR draw_char(const GFXfont *font,
             uncompress(bitmap, &bitmap_size, &font->bitmap[offset], glyph->compressed_size);
             bitmap_allocated = true;
         }
+        // a glyph without pixels (space) has nothing to decompress: malloc(0)
+        // returns NULL on ESP32, and returning here would skip the cursor
+        // advance below - every space in the text would disappear
     }
     else
     {

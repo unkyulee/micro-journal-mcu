@@ -24,24 +24,30 @@ void WebEditor_render()
 {
     // header
     int cursorX = 10;
-    int cursorY = 120;
+    int cursorY = 100;
     writeln(
         (GFXfont *)&systemFont,
         "DRIVE MODE",
         &cursorX, &cursorY,
         display_EPD_framebuffer());
-    cursorY += 20;
+    cursorY += 10;
 
-    //
+    // the font is 33 pixels tall, 44 keeps the lines clearly apart
+    // and the longest message (10 lines) still ends above the bottom edge
     String lines[10];
     int count = fileserver_status_lines(lines, 10);
     for (int i = 0; i < count; i++)
     {
         cursorX = 30;
-        cursorY += 34;
 
+        // an empty line is a half height gap
         if (lines[i].isEmpty())
+        {
+            cursorY += 22;
             continue;
+        }
+
+        cursorY += 44;
 
         writeln(
             (GFXfont *)&systemFont,
