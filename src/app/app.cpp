@@ -89,8 +89,12 @@ void app_setup()
         Serial.println("PSRAM not found or not initialized!");
     }
 
-    // allocate memory is PSRAM
-    heap_caps_malloc_extmem_enable(64);
+    // allocations of 4KB and more go to PSRAM, smaller ones stay internal.
+    // This is the SDK default. FreeRTOS creates queues and semaphores with
+    // malloc, and with a much smaller threshold they end up in PSRAM, which
+    // is unreachable while flash is erased (cache off) - an interrupt that
+    // uses such a queue at that moment would fault.
+    heap_caps_malloc_extmem_enable(4096);
 
     //
     Serial.println("Flash Chip Information:");

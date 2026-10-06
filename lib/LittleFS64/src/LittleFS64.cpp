@@ -391,6 +391,7 @@ private:
         return esp_partition_write(part(c), block * c->block_size + off, buffer, size) == ESP_OK ? LFS_ERR_OK : LFS_ERR_IO;
     }
 
+    // one erase command per littlefs block, the flash works in 64KB blocks
     static int blockErase(const lfs_config *c, lfs_block_t block)
     {
         return esp_partition_erase_range(part(c), block * c->block_size, c->block_size) == ESP_OK ? LFS_ERR_OK : LFS_ERR_IO;

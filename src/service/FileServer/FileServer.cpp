@@ -18,6 +18,12 @@
 // how long to wait for each saved access point
 #define FILESERVER_CONNECT_TIMEOUT 10000
 
+// WiFi transmit power while Drive Mode is open, 8.5 dBm instead of the
+// default 19.5 dBm. The radio transmitting at full power while a flash
+// block is erased can pull the 3.3V supply low enough to reset the device
+// (seen on Rev.6 with a weak supply). Range drops to roughly one room.
+#define FILESERVER_TX_POWER WIFI_POWER_8_5dBm
+
 // uploads land in a temp file first and are swapped in only when complete,
 // so a dropped connection never leaves a half written journal behind
 #define FILESERVER_TMP_SUFFIX ".webtmp"
@@ -48,9 +54,9 @@ static String uploadTarget;
 static String uploadError;
 static bool uploadComplete = false;
 
-// Receiving over WiFi and erasing the internal flash at the same time
-// crashes the device (double exception while the flash cache is off), so an
-// upload is collected in PSRAM first and written out once the transfer is done.
+// An upload is collected in PSRAM first and written out once the transfer is
+// done, so the radio is not busy receiving while flash blocks are erased -
+// the two together draw the most current.
 // Without PSRAM, or when it doesn't fit, the body streams straight to the file.
 static uint8_t *uploadBuffer = nullptr;
 static size_t uploadBufferSize = 0;
@@ -382,18 +388,6 @@ static void fileserver_handle_read()
     file.close();
 }
 
-// TEMPORARY diagnostics for the crash after large uploads:
-// reports the lowest free stack this task ever had and whether the heap
-// is still intact, so a memory overwrite can be traced to one step
-static void fileserver_check(const char *stage)
-{
-    bool intact = heap_caps_check_integrity_all(true);
-    _log("[fileserver] %s: heap %s, least free stack %u bytes\n",
-         stage,
-         intact ? "ok" : "CORRUPT",
-         (unsigned int)uxTaskGetStackHighWaterMark(NULL));
-}
-
 //
 static void fileserver_free_buffer()
 {
@@ -525,11 +519,9 @@ static void fileserver_handle_upload()
         if (uploadFile)
             uploadFile.close();
 
-        // the body is complete, now it is safe to touch the flash
-        fileserver_check("received");
+        // the body is complete, write it to storage
         if (uploadBuffer != nullptr && uploadError.isEmpty() && !uploadTarget.isEmpty())
             fileserver_flush_buffer();
-        fileserver_check("written");
 
         fileserver_free_buffer();
         uploadComplete = true;
@@ -605,9 +597,7 @@ static void fileserver_handle_save()
         }
     }
 
-    bool committed = fileserver_commit(tmp, target);
-    fileserver_check("replaced");
-    if (!committed)
+    if (!fileserver_commit(tmp, target))
     {
         gfs()->remove(tmp.c_str());
         fileserver_send_error(500, "Unable to replace the file");
@@ -779,6 +769,9 @@ static void fileserver_start()
         fileserver_message("Unable to start WiFi");
         return;
     }
+
+    // less current while flash is written, see FILESERVER_TX_POWER
+    WiFi.setTxPower(FILESERVER_TX_POWER);
 
     // http://microjournal.local
     // works on most desktops and phones, the IP address is the fallback
