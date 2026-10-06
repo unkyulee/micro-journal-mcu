@@ -12,6 +12,11 @@
 
 #ifdef USE_LITTLEFS
 #include "app/FileSystem/FileSystemLittleFS.h"
+
+// partition label holding the file system, override in platformio.ini
+#ifndef LITTLEFS_PARTITION
+#define LITTLEFS_PARTITION "storage"
+#endif
 #endif
 
 #ifdef BOARD_PICO
@@ -214,8 +219,8 @@ FileSystem *gfs()
 #endif
 
 #ifdef USE_LITTLEFS
-        // ESP32 internal flash, LittleFS on partition "storage"
-        fileSystem = new FileSystemLittleFS("storage");
+        // ESP32 internal flash, LittleFS on partition LITTLEFS_PARTITION
+        fileSystem = new FileSystemLittleFS(LITTLEFS_PARTITION);
 #endif
 
         if (!fileSystem->begin())
