@@ -258,6 +258,10 @@ static bool fileserver_commit(const String &tmp, const String &target)
 {
     String bak = target + FILESERVER_BAK_SUFFIX;
 
+    // a newly uploaded file has no original to keep
+    if (!gfs()->exists(target.c_str()))
+        return gfs()->rename(tmp.c_str(), target.c_str());
+
     if (!gfs()->rename(target.c_str(), bak.c_str()))
     {
         // backup left behind by an interrupted save
@@ -445,7 +449,13 @@ static void fileserver_handle_upload()
         if (uploadFile)
             uploadFile.close();
 
-        uploadError = "Upload aborted";
+        // the connection dropped and the web server won't call the save
+        // handler, so the partial temp file has to be cleaned up here
+        if (!uploadTarget.isEmpty())
+            gfs()->remove((uploadTarget + FILESERVER_TMP_SUFFIX).c_str());
+
+        uploadTarget = "";
+        uploadError = "";
     }
 }
 

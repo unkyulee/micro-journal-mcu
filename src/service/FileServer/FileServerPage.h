@@ -60,6 +60,15 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
 .btn:disabled { opacity: .5; cursor: default; }
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 14px; }
 .notice.error { background: var(--danger-soft); color: var(--danger); }
+.progress { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; background: var(--paper); border: 1px solid var(--line); font-size: 14px; }
+.progress-row { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.progress-row span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.progress-row span:last-child { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.progress-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.progress-bar span { display: block; height: 100%; width: 0; background: var(--accent); }
+.progress.error { background: var(--danger-soft); border-color: var(--danger-soft); color: var(--danger); }
+.progress.error .progress-bar { display: none; }
+.progress.error .progress-row { margin-bottom: 0; }
 .group { margin-bottom: 18px; }
 .group-title { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); padding: 0 12px 6px; }
 .rows { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -124,6 +133,10 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
     <input type="file" id="uploadInput" multiple hidden>
   </div>
   <div class="notice" id="notice" hidden></div>
+  <div class="progress" id="progress" hidden aria-live="polite">
+    <div class="progress-row"><span id="progressText"></span><span id="progressDetail"></span></div>
+    <div class="progress-bar"><span id="progressFill"></span></div>
+  </div>
   <div id="files"></div>
   <div class="storage" id="storage" hidden>
     <div class="storage-bar"><span id="storageFill"></span></div>
@@ -478,26 +491,66 @@ svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; s
   async function uploadFiles(list) {
     const button = $("btnUpload");
     button.disabled = true;
+    let failed = false;
     try {
       for (const file of list) {
         const name = uploadName(file.name);
         if (!name) { toast(file.name + ": this file name can't be stored on the device"); continue; }
         if (fileInfo(name) && !confirm("Replace " + baseName(name) + " on the device?")) continue;
 
-        toast("Uploading " + file.name + " (" + fmtSize(file.size) + ")...");
+        showProgress("Uploading " + file.name, 0, file.size);
         try {
-          const headers = Object.assign(uploadHeaders(name), { "X-Upload": "1" });
-          await api("POST", fileUrl(name), file, headers);
-          toast("Uploaded " + file.name);
+          await sendFile(name, file, (sent, total) => showProgress("Uploading " + file.name, sent, total));
+          showProgress("Uploaded " + file.name + " (" + fmtSize(file.size) + ")", 1, 1);
         } catch (e) {
-          // .json files are checked on the device, broken ones are refused
-          toast("Couldn't upload " + file.name + ": " + e.message);
+          // stays on screen: .json files are checked on the device and
+          // broken ones are refused, a full storage is reported here too
+          showProgress("Couldn't upload " + file.name + ": " + e.message, 0, 0, true);
+          failed = true;
         }
       }
     } finally {
       button.disabled = false;
+      if (!failed) setTimeout(() => { $("progress").hidden = true; }, 4000);
       refresh();
     }
+  }
+
+  // fetch() can't report how much has been sent, XMLHttpRequest can
+  function sendFile(name, file, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", fileUrl(name));
+      const headers = Object.assign(uploadHeaders(name), { "X-Upload": "1" });
+      Object.keys(headers).forEach((key) => xhr.setRequestHeader(key, headers[key]));
+      xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) onProgress(ev.loaded, ev.total); };
+      xhr.onload = () => {
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error((data && data.error) || ("HTTP " + xhr.status)));
+      };
+      xhr.onerror = () => reject(new Error("Device not reachable"));
+      xhr.onabort = () => reject(new Error("Upload cancelled"));
+      xhr.send(file);
+    });
+  }
+
+  function showProgress(text, sent, total, isError) {
+    const box = $("progress");
+    box.hidden = false;
+    box.classList.toggle("error", !!isError);
+
+    const percent = total > 0 ? Math.min(100, Math.round((sent / total) * 100)) : 0;
+    $("progressFill").style.width = percent + "%";
+
+    let detail = "";
+    if (!isError && total > 1) {
+      // everything sent, the device is still writing the last part
+      detail = sent >= total ? "finishing on the device..." : percent + "% (" + fmtSize(sent) + " of " + fmtSize(total) + ")";
+    }
+    $("progressText").textContent = text;
+    $("progressDetail").textContent = detail;
   }
 
   // ---------- wiring ----------
