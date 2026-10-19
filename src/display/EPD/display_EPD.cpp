@@ -4,6 +4,9 @@
 
 //
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
 
 // screens
 #include "ErrorScreen/ErrorScreen.h"
@@ -14,6 +17,19 @@
 #include "Update/Update.h"
 #include "KeyboardScreen/KeyboardScreen.h"
 #include "SendScreen/SendScreen.h"
+
+// Key strokes for screens other than the word processor are queued here and
+// handled inside display_EPD_loop. The display usually runs on the second
+// core, and handling a key on the keyboard core while a screen renders lets
+// both cores change the status() document at the same time, which crashes.
+struct QueuedKey
+{
+    int key;
+    int screen;
+};
+static QueueHandle_t key_queue = NULL;
+static SemaphoreHandle_t display_lock = NULL;
+static void display_EPD_render();
 
 // Display Frame Buffer Setup
 uint8_t *framebuffer = NULL;
@@ -68,6 +84,12 @@ void display_EPD_setup()
     }
     memset(framebuffer, 0xFF, EPD_WIDTH * EPD_HEIGHT / 2);
 
+    // key queue between the keyboard core and the display core
+    key_queue = xQueueCreate(32, sizeof(QueuedKey));
+
+    // only one core may run the display loop at a time
+    display_lock = xSemaphoreCreateMutex();
+
     // Initialize EPD Screen
     epd_init();
     _log("E-ink display initialized\n");
@@ -78,107 +100,126 @@ void display_EPD_loop()
 {
     // process display
     static unsigned int last = 0;
-    if (millis() - last > 150)
+    if (millis() - last <= 150)
+        return;
+
+    // The display can move between cores when the screen changes. A screen
+    // setup running on both cores at once starts Bluetooth twice, so the
+    // other core skips this round while one is still inside.
+    if (display_lock == NULL || xSemaphoreTake(display_lock, 0) != pdTRUE)
+        return;
+
+    last = millis();
+
+    // handle key strokes on the same core that renders
+    int core = display_EPD_core();
+    display_EPD_process_keys();
+
+    // a key moved the display to the other core, let that core set it up
+    if (display_EPD_core() == core)
+        display_EPD_render();
+
+    xSemaphoreGive(display_lock);
+}
+
+static void display_EPD_render()
+{
+    JsonDocument &app = status();
+    static int screen_prev = -1;
+    int screen = app["screen"].as<int>();
+
+    // Error Screen
+    if (screen == ERRORSCREEN)
     {
-        last = millis();
-
-        JsonDocument &app = status();
-        static int screen_prev = -1;
-        int screen = app["screen"].as<int>();
-
-        // Error Screen
-        if (screen == ERRORSCREEN)
-        {
-            // setup only once
-            if (screen != screen_prev)
-                ErrorScreen_setup();
-            else
-                // loop
-                ErrorScreen_render();
-        }
-
-        // WAKE UP SCREEN
-        // does nothing and skips immediately to WORDPROCESSOR
-        else if (screen == WAKEUPSCREEN)
-        {
-            // setup only once
-            if (screen != screen_prev)
-                WakeUp_setup();
-            else
-                // loop
-                WakeUp_render();
-        }
-
-        // WORD PROCESSOR
-        else if (screen == WORDPROCESSOR)
-        {
-            // setup only once
-            if (screen != screen_prev)
-                WP_setup();
-            else
-                // loop
-                WP_render();
-        }
-
-        // SLEEP SCREEN
-        else if (screen == SLEEPSCREEN)
-        {
-            // setup only once
-            if (screen != screen_prev)
-                Sleep_setup();
-            else
-                // loop
-                Sleep_render();
-        }
-
-        // MENU SCREEN
-        else if (screen == MENUSCREEN)
-        {
-            // setup only once
-            if (screen != screen_prev)
-                Menu_setup();
-            else
-                // loop
-                Menu_render();
-        }
-
-        // UPDATE
-        else if (screen == UPDATESCREEN)
-        {
-            // setup only once
-            if (screen != screen_prev)
-                Update_setup();
-            else
-                // loop
-                Update_render();
-        }
-
-        // BLE KEYBOARD SCREEN
-        else if (screen == KEYBOARDSCREEN)
-        {
-            // setup only once
-            if (screen != screen_prev)
-                KeyboardScreen_setup();
-            else
-                // loop
-                KeyboardScreen_render();
-        }
-
-        // SEND SCREEN
-        else if (screen == SENDSCREEN)
-        {
-            // setup only once
-            if (screen != screen_prev)
-                SendScreen_setup();
-            else
-                // loop
-                SendScreen_render();
-        }
-
-        //
-        app["screen_prev"] = screen;
-        screen_prev = screen;
+        // setup only once
+        if (screen != screen_prev)
+            ErrorScreen_setup();
+        else
+            // loop
+            ErrorScreen_render();
     }
+
+    // WAKE UP SCREEN
+    // does nothing and skips immediately to WORDPROCESSOR
+    else if (screen == WAKEUPSCREEN)
+    {
+        // setup only once
+        if (screen != screen_prev)
+            WakeUp_setup();
+        else
+            // loop
+            WakeUp_render();
+    }
+
+    // WORD PROCESSOR
+    else if (screen == WORDPROCESSOR)
+    {
+        // setup only once
+        if (screen != screen_prev)
+            WP_setup();
+        else
+            // loop
+            WP_render();
+    }
+
+    // SLEEP SCREEN
+    else if (screen == SLEEPSCREEN)
+    {
+        // setup only once
+        if (screen != screen_prev)
+            Sleep_setup();
+        else
+            // loop
+            Sleep_render();
+    }
+
+    // MENU SCREEN
+    else if (screen == MENUSCREEN)
+    {
+        // setup only once
+        if (screen != screen_prev)
+            Menu_setup();
+        else
+            // loop
+            Menu_render();
+    }
+
+    // UPDATE
+    else if (screen == UPDATESCREEN)
+    {
+        // setup only once
+        if (screen != screen_prev)
+            Update_setup();
+        else
+            // loop
+            Update_render();
+    }
+
+    // BLE KEYBOARD SCREEN
+    else if (screen == KEYBOARDSCREEN)
+    {
+        // setup only once
+        if (screen != screen_prev)
+            KeyboardScreen_setup();
+        else
+            // loop
+            KeyboardScreen_render();
+    }
+
+    // SEND SCREEN
+    else if (screen == SENDSCREEN)
+    {
+        // setup only once
+        if (screen != screen_prev)
+            SendScreen_setup();
+        else
+            // loop
+            SendScreen_render();
+    }
+
+    //
+    app["screen_prev"] = screen;
+    screen_prev = screen;
 }
 
 // key is int: printable keys above 127 (UTF-8 codepoints) and virtual
@@ -187,6 +228,52 @@ void display_EPD_keyboard(int key, bool pressed, int index)
 {
     JsonDocument &app = status();
     int screen = app["screen"].as<int>();
+
+    // the word processor takes key strokes directly to keep typing responsive
+    if (screen == WORDPROCESSOR)
+    {
+        // send the key stroke to word processor
+        WP_keyboard(key, pressed, index);
+        return;
+    }
+
+    // other screens only react to key release, hand it to the display loop
+    if (pressed || key_queue == NULL)
+        return;
+
+    QueuedKey queued = {key, screen};
+    if (xQueueSend(key_queue, &queued, 0) != pdTRUE)
+        _log("display_EPD_keyboard:: key queue full, dropping key %d\n", key);
+}
+
+// called from display_EPD_loop so key handling never overlaps a render
+void display_EPD_process_keys()
+{
+    if (key_queue == NULL)
+        return;
+
+    JsonDocument &app = status();
+    QueuedKey queued;
+    while (xQueueReceive(key_queue, &queued, 0) == pdTRUE)
+    {
+        int screen = app["screen"].as<int>();
+        int menu = app["menu"]["state"].as<int>();
+
+        // the key was meant for a screen that is no longer shown
+        if (queued.screen != screen)
+            continue;
+
+        display_EPD_handle_key(queued.key, screen);
+
+        // let the new screen or menu run its setup before taking more keys
+        if (app["screen"].as<int>() != screen || app["menu"]["state"].as<int>() != menu)
+            break;
+    }
+}
+
+void display_EPD_handle_key(int key, int screen)
+{
+    bool pressed = false;
 
     if (screen == ERRORSCREEN)
     {
@@ -198,12 +285,6 @@ void display_EPD_keyboard(int key, bool pressed, int index)
     {
         if (!pressed)
             WakeUp_keyboard(key);
-    }
-
-    else if (screen == WORDPROCESSOR)
-    {
-        // send the key stroke to word processor
-        WP_keyboard(key, pressed, index);
     }
 
     else if (screen == SLEEPSCREEN)

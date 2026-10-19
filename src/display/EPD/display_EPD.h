@@ -14,6 +14,8 @@ int display_EPD_core();
 
 //
 void display_EPD_keyboard(int key, bool pressed, int index);
+void display_EPD_process_keys();
+void display_EPD_handle_key(int key, int screen);
 void display_EPD_keyboard_report(uint8_t modifier, uint8_t reserved, uint8_t* keycodes);
 
 //
