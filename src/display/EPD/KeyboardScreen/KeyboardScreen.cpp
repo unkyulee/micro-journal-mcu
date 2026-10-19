@@ -5,7 +5,7 @@
 
 //
 #include "../display_EPD.h"
-#include "service/Send/Send.h"
+#include "../BleUI/BleUI.h"
 
 //
 #include <NimBLEDevice.h>
@@ -15,12 +15,10 @@ BleKeyboard bleKeyboard;
 int keyboardConnectedPrev = -1;
 
 static constexpr uint8_t HID_KEY_ESCAPE = 0x29;
-static constexpr uint8_t HID_KEY_PAUSE = 0x48;
 static constexpr uint32_t ESC_LONG_PRESS_MS = 2000;
 static volatile bool escPressed = false;
 static volatile uint32_t escPressedAt = 0;
 static bool bleKeyboardExitStarted = false;
-static bool pausePressed = false;
 
 static void KeyboardScreen_exitBleKeyboardMode()
 {
@@ -41,45 +39,17 @@ static void KeyboardScreen_exitBleKeyboardMode()
     ESP.restart();
 }
 
-// function reference used for SEND
-void _send_key(int key)
-{
-    _debug("_send_key: %d\n", key);
-
-    // If needed, convert line endings
-    char c = (char)key;
-    if (c == '\n')
-    {
-        bleKeyboard.press('\n');
-        delay(5);
-        bleKeyboard.release('\n');
-    }
-    else if (isPrintable(c) || c == '\t') // Avoid sending non-printable control characters
-    {
-        bleKeyboard.press(c);
-        delay(5);
-        bleKeyboard.release(c);
-    }
-
-    // BLE requires delay per key press to be stable
-    delay(10);
-}
-
 //
 void KeyboardScreen_setup()
 {
     //
     _log("Keyboard Screen Setup\n");
 
-    // register send function
-    send_register(_send_key);
-
     //
     keyboardConnectedPrev = -1;
     escPressed = false;
     escPressedAt = 0;
     bleKeyboardExitStarted = false;
-    pausePressed = false;
 
     // Clear Screen
     epd_poweron();
@@ -116,47 +86,29 @@ void KeyboardScreen_render()
         return;
     }
 
-    // Start Rendering Screen
-    epd_poweron();
-    epd_clear_quick(epd_full_screen(), 4, 50);
+    BleUI_begin();
+    BleUI_header("Bluetooth Keyboard");
 
-    // Draw text
-    int32_t x = 18;
-    int32_t y = 50;
-    write_string(display_EPD_font(), "Bluetooth Keyboard Mode", &x, &y, NULL);
-
-    //
-    x = 18;
-    y += 30;
     if (keyboardConnected)
     {
-        write_string((GFXfont *)&systemFont, "Keyboard Connected", &x, &y, NULL);
+        BleUI_status(BLEUI_DOT_FILLED, "Connected");
+        BleUI_text(0, "Typing goes to your computer.");
+        BleUI_text(1, "Power off to end the session.");
     }
     else
     {
-        write_string((GFXfont *)&systemFont, "Waiting for connection ...", &x, &y, NULL);
+        BleUI_status(BLEUI_DOT_HOLLOW, "Waiting for connection");
+        BleUI_text(0, "Open Bluetooth on your computer and");
+        BleUI_text(1, "pair with \"Micro Journal 7\".");
     }
 
-    x = 18;
-    y += 30;
-    write_string((GFXfont *)&systemFont, "Press Left Knob  will send the text", &x, &y, NULL);
-
-    x = 18;
-    y += 15;
-    write_string((GFXfont *)&systemFont, "Turn off the device to end the writing session", &x, &y, NULL);
-
-    x = 18;
-    y += 15;
-    write_string((GFXfont *)&systemFont, "Hold ESC for 2 seconds to exit", &x, &y, NULL);
-
-    //
-    epd_poweroff();
+    BleUI_footer("Hold Esc", "Exit");
+    BleUI_end();
 }
 
 void KeyboardScreen_keyboard(uint8_t modifier, uint8_t reserved, uint8_t *keycodes)
 {
     bool escapeInReport = false;
-    bool pauseInReport = false;
     KeyReport filteredReport = {};
     filteredReport.modifiers = modifier;
     filteredReport.reserved = reserved;
@@ -166,8 +118,6 @@ void KeyboardScreen_keyboard(uint8_t modifier, uint8_t reserved, uint8_t *keycod
     {
         if (keycodes[i] == HID_KEY_ESCAPE)
             escapeInReport = true;
-        else if (keycodes[i] == HID_KEY_PAUSE)
-            pauseInReport = true;
         else if (keycodes[i] != 0 && filteredIndex < 6)
             filteredReport.keys[filteredIndex++] = keycodes[i];
     }
@@ -196,27 +146,8 @@ void KeyboardScreen_keyboard(uint8_t modifier, uint8_t reserved, uint8_t *keycod
         sendShortEscape = true;
     }
 
-    // PAUSE is the SEND command. Trigger only on its key-down edge and remove
-    // it from the BLE report without suppressing other simultaneously held keys.
-    const bool startSend = pauseInReport && !pausePressed;
-    pausePressed = pauseInReport;
-
     if (!bleKeyboard.isConnected())
         return;
-
-    // any key pressed is going to stop sending text
-    JsonDocument &app = status();
-    // A PAUSE release produces an otherwise empty report. Do not let that
-    // immediately cancel the SEND task that its preceding press just started.
-    if (filteredIndex > 0 || modifier != 0 || sendShortEscape)
-        app["send_stop"] = true;
-
-    if (startSend)
-    {
-        app["task"] = "send_start";
-        app["send_stop"] = false;
-        app["send_finished"] = false;
-    }
 
     // A short ESC needs distinct down/up notifications. Preserve the current
     // modifier and other held keys in both reports so the host state remains

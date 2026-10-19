@@ -30,6 +30,8 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     String keyboard_layout = app["config"]["keyboard_layout"].as<String>();
     if (keyboard_layout == "null" || keyboard_layout.isEmpty())
         keyboard_layout = "US";
+    if (app["keyboard_custom"].as<bool>())
+        keyboard_layout += " (Custom)";
 
     // Text to be displayed
     ptft->setCursor(0, 20, 2);
@@ -42,25 +44,25 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     //
     if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
     {
-        ptft->println(" [S] SYNC ");
+        ptft->println(" [N] NETWORK BACKUP");
     }
 
-    ptft->println(" [W] WIFI");
+    ptft->println(" [W] WIFI SETUP");
     ptft->println(" [E] DRIVE MODE");
+    ptft->println(" [S] SEND");
 
 #ifdef REV5
-    ptft->println(" [K] KEY LAYOUT - " + keyboard_layout);
     if (ble_enabled())
-        ptft->println(" [M] PAIR BLE KBD - ON");
+        ptft->println(" [P] PAIR BLE KBD - ON");
     else
-        ptft->println(" [M] PAIR BLE KBD - OFF");
-    ptft->println(" [T] SEND");
+        ptft->println(" [P] PAIR BLE KBD - OFF");
 #endif
 
 #ifdef REV6
-    ptft->println(" [T] BLE KEYBOARD");
-    ptft->println(" [L] LANGUAGE - " + keyboard_layout);
+    ptft->println(" [K] BLE KEYBOARD");
 #endif
+
+    ptft->println(" [L] LANGUAGE - " + keyboard_layout);
 
     ptft->println(" [G] BACKGROUND COLOR");
     ptft->println(" [C] FONT COLOR");
@@ -104,8 +106,8 @@ void Home_keyboard(char key)
     //
     JsonDocument &app = status();
 
-    // home
-    if (key == 'S' || key == 's')
+    // network backup
+    if (key == 'N' || key == 'n')
     {
         if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
         {
@@ -127,7 +129,7 @@ void Home_keyboard(char key)
     }
 
 #ifdef REV5
-    else if (key == 'k' || key == 'K')
+    else if (key == 'l' || key == 'L')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_LAYOUT;
@@ -137,18 +139,18 @@ void Home_keyboard(char key)
         // move to keyboard layout
         app["menu"]["state"] = MENU_BUTTONS;
     }
-    else if (key == 'm' || key == 'M' || key == MENU)
+    else if (key == 'p' || key == 'P' || key == MENU)
     {
         // move to bluetooth setup
         app["menu"]["state"] = MENU_BLUETOOTH;
     }
-    else if (key == 't' || key == 'T')
+#endif
+
+    else if (key == 's' || key == 'S')
     {
         // act as a bluetooth keyboard to SEND text to a computer
-        app["screen"] = KEYBOARDSCREEN;
+        app["screen"] = SENDSCREEN;
     }
-
-#endif
 
     else if (key == 'w' || key == 'W')
     {
@@ -163,7 +165,7 @@ void Home_keyboard(char key)
     }
 
 #ifdef REV6
-    else if (key == 't' || key == 'T')
+    else if (key == 'k' || key == 'K')
     {
         // move to keyboard layout
         app["screen"] = KEYBOARDSCREEN;

@@ -32,7 +32,7 @@ void Clear_render()
     cursorY += 50;
     writeln(
         (GFXfont *)&systemFont,
-        "Make sure to sync your content before deleting",
+        "Make sure to back up your content before deleting",
         &cursorX, &cursorY,
         display_EPD_framebuffer());
 

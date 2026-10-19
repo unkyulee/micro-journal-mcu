@@ -31,7 +31,7 @@ void Sync_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     // header
     ptft->setCursor(0, 30, 2);
     ptft->setTextColor(TFT_WHITE, TFT_BLACK);
-    ptft->println(" SYNC & BACKUP ");
+    ptft->println(" NETWORK BACKUP ");
     ptft->println("");
 
     // SYNC STATE
@@ -41,7 +41,7 @@ void Sync_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     if (sync_state == SYNC_START)
     {
         //
-        ptft->println("Preparing Sync Process ...");
+        ptft->println("Preparing Network Backup ...");
 
         //
         sync_start_request();
@@ -74,7 +74,7 @@ void Sync_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     else if (sync_state == SYNC_COMPLETED)
     {
         //
-        ptft->println("SYNC Completed. Press any key to exit");
+        ptft->println("NETWORK BACKUP Completed. Press any key to exit");
     }
 }
 

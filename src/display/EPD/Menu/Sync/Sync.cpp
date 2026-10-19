@@ -36,7 +36,7 @@ void Sync_render()
     int cursorY = 120;
     writeln(
         (GFXfont *)&systemFont,
-        format("SYNC & BACKUP for %s", Editor::getInstance().fileName).c_str(),
+        format("NETWORK BACKUP for %s", Editor::getInstance().fileName).c_str(),
         &cursorX, &cursorY,
         display_EPD_framebuffer());
 
@@ -51,7 +51,7 @@ void Sync_render()
         cursorY += 50;
         writeln(
             (GFXfont *)&systemFont,
-            "Preparing Sync Process ...",
+            "Preparing Network Backup ...",
             &cursorX, &cursorY,
             display_EPD_framebuffer());
 
@@ -100,7 +100,7 @@ void Sync_render()
 
         writeln(
             (GFXfont *)&systemFont,
-            "SYNC Completed. Press any key to exit.",
+            "NETWORK BACKUP Completed. Press any key to exit.",
             &cursorX, &cursorY,
             display_EPD_framebuffer());
     }

@@ -76,6 +76,9 @@ void keypad_load_config(String filename, int *layers, int size, const char **key
         // Close the file
         file.close();
         delay(100);
+
+        // custom keymap is in use
+        app["keyboard_custom"] = true;
     }
 }
 

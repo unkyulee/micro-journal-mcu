@@ -5,12 +5,9 @@
 #include "keyboard/keyboard.h"
 
 //
-#include "service/Editor/Editor.h"
-#include "service/Send/Send.h"
-
-//
 #include <NimBLEDevice.h>
 #include <BleKeyboard.h>
+#include "../BleUI/BleUI.h"
 
 BleKeyboard bleKeyboard;
 int keyboardConnectedPrev = -1;
@@ -75,9 +72,6 @@ int _usb_keyboard_layers[2][72] = {
 // key stuck on the host.
 static int activeBleKeys[TOTAL_KEYS] = {};
 static int bleLayer = 0;
-static bool sendLeftPressed = false;
-static bool sendRightPressed = false;
-static bool sendChordActive = false;
 
 static int KeyboardScreen_resolveKey(int keypadKey, int mappedKey)
 {
@@ -126,38 +120,11 @@ int _usb_keyboard_layers[3][49] = {
 };
 #endif
 
-// function reference used for SEND
-void _send_key(int key)
-{
-    _debug("_send_key: %d\n", key);
-
-    // If needed, convert line endings
-    char c = (char)key;
-    if (c == '\n')
-    {
-        bleKeyboard.press('\n');
-        delay(5);
-        bleKeyboard.release('\n');
-    }
-    else if (isPrintable(c) || c == '\t') // Avoid sending non-printable control characters
-    {
-        bleKeyboard.press(c);
-        delay(5);
-        bleKeyboard.release(c);
-    }
-
-    // BLE requires delay per key press to be stable
-    delay(10);
-}
-
 //
 void KeyboardScreen_setup(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 {
     // clear screen
     display->clearDisplay();
-
-    // register send function
-    send_register(_send_key);
 
     // reset flags
     keyboardConnectedPrev = -1;
@@ -166,9 +133,6 @@ void KeyboardScreen_setup(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX 
     bleKeyboardExitStarted = false;
     bleLayer = 0;
     memset(activeBleKeys, 0, sizeof(activeBleKeys));
-    sendLeftPressed = false;
-    sendRightPressed = false;
-    sendChordActive = false;
 
     // load keyboard layout
     // Load Custom Keybaord Layout
@@ -212,43 +176,25 @@ void KeyboardScreen_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX
     // Only redraw screen when connection status changes
     if (keyboardConnected != keyboardConnectedPrev)
     {
-        display->clearDisplay();
         keyboardConnectedPrev = keyboardConnected;
 
-        // Screen dimensions
-        int screenW = 400;
-        int screenH = 300;
+        BleUI_clear(display);
+        BleUI_header(display, u8, "Bluetooth Keyboard");
 
-        //
-        u8->setFont(u8g2_font_courB14_tf);
-
-        // Title
-        u8->setCursor(10, 30);
-        u8->print("BLUETOOTH KEYBOARD");
-
-        // Status Box
-        u8->setCursor(10, 80);
         if (keyboardConnected)
         {
-            u8->print("Status: Connected");
+            BleUI_status(display, u8, BLEUI_DOT_FILLED, "Connected");
+            BleUI_text(u8, 0, "Typing goes to your computer.");
+            BleUI_text(u8, 1, "Power off to end the session.");
         }
         else
         {
-            u8->print("Status: Waiting...");
+            BleUI_status(display, u8, BLEUI_DOT_HOLLOW, "Waiting for connection");
+            BleUI_text(u8, 0, "Open Bluetooth on your computer and");
+            BleUI_text(u8, 1, "pair with \"Micro Journal\".");
         }
 
-        // Instructions
-        u8->setCursor(10, 145);
-        u8->print("Long press ESC to end session.");
-
-        u8->setCursor(10, 175);
-        u8->print("Press top-left and top-right keys");
-
-        u8->setCursor(10, 205);
-        u8->print("simultaneously to SEND.");
-
-        u8->setCursor(10, 235);
-        u8->print("Hold ESC for 2 seconds to exit.");
+        BleUI_footer(display, u8, "Hold Esc", "Exit");
 
         // decide whether the panel actually needs to be pushed over SPI this tick
         needsDisplay = true;
@@ -269,41 +215,6 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
     {
         _log("KeyboardScreen_keyboard: invalid key index %d\n", index);
         return;
-    }
-
-    // Track the SEND chord before ESC handling; index 0 is also ESC, and the
-    // former early return made the corner-key chord unreachable.
-#if defined(KEYPAD_68)
-    constexpr int SEND_RIGHT_INDEX = 14;
-#else
-    constexpr int SEND_RIGHT_INDEX = 11;
-#endif
-    if (bleKeyboard.isConnected() && (index == 0 || index == SEND_RIGHT_INDEX))
-    {
-        if (index == 0)
-            sendLeftPressed = pressed;
-        else
-            sendRightPressed = pressed;
-
-        if (!sendChordActive && sendLeftPressed && sendRightPressed)
-        {
-            sendChordActive = true;
-            escPressed = false;
-            memset(activeBleKeys, 0, sizeof(activeBleKeys));
-            bleKeyboard.releaseAll();
-            JsonDocument &app = status();
-            app["task"] = "send_start";
-            app["send_stop"] = false;
-            app["send_finished"] = false;
-            return;
-        }
-
-        if (sendChordActive)
-        {
-            if (!sendLeftPressed && !sendRightPressed)
-                sendChordActive = false;
-            return;
-        }
     }
 
     // Handle ESC before checking the BLE connection so keyboard mode can also
@@ -342,9 +253,7 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
     if (!bleKeyboard.isConnected())
         return;
 
-    // any key pressed is going to stop sending text
     JsonDocument &app = status();
-    app["send_stop"] = true;
 
     // LOWER is pressed
     if (_usb_keyboard_layers[0][index] == KEY_F24)

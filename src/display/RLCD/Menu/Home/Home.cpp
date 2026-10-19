@@ -36,14 +36,18 @@ void Home_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     //
     if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
     {
-        u8->println(" [S] SYNC ");
+        u8->println(" [N] NETWORK BACKUP");
     }
 
+    u8->println(" [W] WIFI SETUP");
     u8->println(" [E] DRIVE MODE");
-    u8->println(" [W] WIFI");
-    u8->println(" [L] LANGUAGE");
-    u8->println(" [T] BLE KEYBOARD");
-    
+    u8->println(" [S] SEND");
+    u8->println(" [K] BLE KEYBOARD");
+    u8->println(" [L] LANGUAGE - " + keyboard_layout);
+    // narrow left column - show custom keymap on its own line
+    if (app["keyboard_custom"].as<bool>())
+        u8->println("     (Custom)");
+
     u8->println();
     u8->println(" [B] BACK ");
 
@@ -72,8 +76,8 @@ void Home_keyboard(char key)
     //
     JsonDocument &app = status();
 
-    // home
-    if (key == 'S' || key == 's')
+    // network backup
+    if (key == 'N' || key == 'n')
     {
         if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
         {
@@ -94,22 +98,28 @@ void Home_keyboard(char key)
         app["screen"] = WORDPROCESSOR;
     }
 
-    else if (key == 'w')
+    else if (key == 'w' || key == 'W')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_WIFI;
     }
 
-    else if (key == 'l')
+    else if (key == 'l' || key == 'L')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_LAYOUT;
     }
 
-    else if (key == 't')
+    else if (key == 'k' || key == 'K')
     {
         // move to keyboard layout
         app["screen"] = KEYBOARDSCREEN;
+    }
+
+    else if (key == 's' || key == 'S')
+    {
+        // act as a bluetooth keyboard to SEND text to a computer
+        app["screen"] = SENDSCREEN;
     }
 
     else if (key == 'e' || key == 'E')

@@ -10,6 +10,7 @@
 #include "Menu/Menu.h"
 #include "Update/Update.h"
 #include "KeyboardScreen/KeyboardScreen.h"
+#include "SendScreen/SendScreen.h"
 
 // Invoke library, pins defined in platformio.ini
 TFT_eSPI tft = TFT_eSPI();
@@ -38,6 +39,10 @@ int display_ILI9341_core()
     if (menu == MENU_SYNC || menu == MENU_WEB || menu == MENU_BLUETOOTH)
       return 0;
   }
+
+  // SEND blocks the background core while typing, keep the screen on the main core
+  if (screen == SENDSCREEN)
+    return 0;
 
   // If BLE is set then let the BLE work on background alone
   if (app["config"]["ble"]["address"].is<const char *>())
@@ -124,6 +129,17 @@ void display_ILI9341_loop()
         KeyboardScreen_render(&tft, &u8f);
     }
 
+    // Send Screen
+    else if (screen == SENDSCREEN)
+    {
+      // setup only once
+      if (screen != screen_prev)
+        SendScreen_setup(&tft, &u8f);
+      else
+        // loop
+        SendScreen_render(&tft, &u8f);
+    }
+
     // SLEEP SCREEN
     else if (screen == SLEEPSCREEN)
     {
@@ -190,6 +206,12 @@ void display_ILI9341_keyboard(int key, bool pressed, int index)
   {
     // send the key stroke to word processor
     KeyboardScreen_keyboard(key, pressed, index);
+  }
+
+  else if (screen == SENDSCREEN)
+  {
+    if (!pressed)
+      SendScreen_keyboard(key);
   }
 
   else if (screen == SLEEPSCREEN)

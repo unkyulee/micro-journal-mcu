@@ -32,6 +32,12 @@ void handleTapBack(Button2 &b)
         display_keyboard('b', false); // send B when menu
     }
 
+    else if (screen == SENDSCREEN)
+    {
+        // leave SEND screen
+        display_keyboard(27, false);
+    }
+
     else
     {
         // go to sleep

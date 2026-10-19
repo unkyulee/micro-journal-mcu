@@ -23,7 +23,7 @@ void Wifi_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     //
     ptft->setTextColor(TFT_WHITE, TFT_BLACK);
-    ptft->println(" WIFI SETTINGS ");
+    ptft->println(" WIFI SETUP ");
     ptft->println("");
 
     // RENDER based on the screen index

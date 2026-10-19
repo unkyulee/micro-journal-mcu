@@ -10,6 +10,23 @@ void send_register(SendFunc f) {
     send_func = f;
 }
 
+// progress of the current send
+static volatile size_t send_total = 0;
+static volatile size_t send_sent = 0;
+
+int send_progress()
+{
+    if (send_total == 0)
+        return 0;
+    return (int)(send_sent * 100 / send_total);
+}
+
+void send_progress_reset()
+{
+    send_total = 0;
+    send_sent = 0;
+}
+
 // Monitor if there are any send request
 void send_loop()
 {
@@ -30,7 +47,6 @@ void send_loop()
             //
             app["task"] = "";
             app["send_finished"] = false;
-            app["send_stop"] = false;
 
             //
             send_start();
@@ -53,11 +69,14 @@ void send_start()
     if (!file || !file.available())
     {
         _log("Send_render: Failed to open file: %s\n", Editor::getInstance().fileName.c_str());
+        app["send_finished"] = true;
         return;
     }
 
     //
     _log("Sending file content over keyboard...\n");
+    send_sent = 0;
+    send_total = file.size();
 
     // Read file content in small chunks
     while (file.available() && app["send_stop"].as<bool>() == false)
@@ -68,6 +87,7 @@ void send_start()
         // use the send function pointer to send
         if (send_func != nullptr)
             send_func(c);
+        send_sent = send_sent + 1;
 
         // Small delay to prevent buffer overflow
         delay(30); // You can tweak this as needed

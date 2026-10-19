@@ -25,7 +25,7 @@ void Wifi_render()
     int cursorY = 80;
     writeln(
         (GFXfont *)&systemFont,
-        " WIFI SETTINGS ",
+        " WIFI SETUP ",
         &cursorX, &cursorY,
         display_EPD_framebuffer());
 

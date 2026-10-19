@@ -20,32 +20,48 @@ void Home_render()
 {
     JsonDocument &app = status();
 
-    // WIFI
+    //
+    String keyboard_layout = app["config"]["keyboard_layout"].as<String>();
+    if (keyboard_layout == "null" || keyboard_layout.isEmpty())
+        keyboard_layout = "US";
+    if (app["keyboard_custom"].as<bool>())
+        keyboard_layout += " (Custom)";
+
     int cursorX = 10;
-    int cursorY = 100;
-    writeln((GFXfont *)&systemFont, " [W] WIFI", &cursorX, &cursorY, display_EPD_framebuffer());
+    int cursorY = 65;
 
-    // Drive Mode (web editor over WiFi)
-    cursorX = 10;
-    cursorY += 35;
-    writeln((GFXfont *)&systemFont, " [E] Drive Mode", &cursorX, &cursorY, display_EPD_framebuffer());
-
-    // SYNC
+    // NETWORK BACKUP
     if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
     {
         cursorX = 10;
         cursorY += 35;
-        writeln((GFXfont *)&systemFont, " [S] SYNC", &cursorX, &cursorY, display_EPD_framebuffer());
+        writeln((GFXfont *)&systemFont, " [N] NETWORK BACKUP", &cursorX, &cursorY, display_EPD_framebuffer());
     }
 
+    // WIFI
     cursorX = 10;
     cursorY += 35;
-    writeln((GFXfont *)&systemFont, " [K] Keyboard Layout", &cursorX, &cursorY, display_EPD_framebuffer());
+    writeln((GFXfont *)&systemFont, " [W] WIFI SETUP", &cursorX, &cursorY, display_EPD_framebuffer());
+
+    // Drive Mode (web editor over WiFi)
+    cursorX = 10;
+    cursorY += 35;
+    writeln((GFXfont *)&systemFont, " [E] DRIVE MODE", &cursorX, &cursorY, display_EPD_framebuffer());
+
+    // Send text over Bluetooth
+    cursorX = 10;
+    cursorY += 35;
+    writeln((GFXfont *)&systemFont, " [S] SEND", &cursorX, &cursorY, display_EPD_framebuffer());
 
     // Bluetooth Keyboard
     cursorX = 10;
     cursorY += 35;
-    writeln((GFXfont *)&systemFont, " [T] Bluetooth Keyboard", &cursorX, &cursorY, display_EPD_framebuffer());
+    writeln((GFXfont *)&systemFont, " [K] BLE KEYBOARD", &cursorX, &cursorY, display_EPD_framebuffer());
+
+    // Keyboard Layout
+    cursorX = 10;
+    cursorY += 35;
+    writeln((GFXfont *)&systemFont, (" [L] LANGUAGE - " + keyboard_layout).c_str(), &cursorX, &cursorY, display_EPD_framebuffer());
 
     // BACK
     cursorX = 10;
@@ -97,8 +113,8 @@ void Home_keyboard(char key)
     //
     JsonDocument &app = status();
 
-    // sync
-    if (key == 'S' || key == 's')
+    // network backup
+    if (key == 'N' || key == 'n')
     {
         if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
         {
@@ -122,17 +138,23 @@ void Home_keyboard(char key)
     }
 
     // wifi setup
-    else if (key == 'w')
+    else if (key == 'w' || key == 'W')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_WIFI;
     }
 
     // keyboardn layout setup
-    else if (key == 'k')
+    else if (key == 'l' || key == 'L')
     {
         // move to keyboard layout
         app["menu"]["state"] = MENU_LAYOUT;
+    }
+
+    // send text over bluetooth
+    else if (key == 's' || key == 'S')
+    {
+        app["screen"] = SENDSCREEN;
     }
 
     // web editor
@@ -143,7 +165,7 @@ void Home_keyboard(char key)
     }
 
     // Bluetooth Keyboard
-    else if (key == 't')
+    else if (key == 'k' || key == 'K')
     {
         // move to keyboard screen
         app["screen"] = KEYBOARDSCREEN;

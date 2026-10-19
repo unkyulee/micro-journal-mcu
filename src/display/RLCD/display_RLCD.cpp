@@ -19,6 +19,7 @@ U8G2_FOR_ST73XX u8g2;
 #include "Menu/Menu.h"
 #include "Update/Update.h"
 #include "KeyboardScreen/KeyboardScreen.h"
+#include "SendScreen/SendScreen.h"
 
 int display_RLCD_core()
 {
@@ -36,6 +37,10 @@ int display_RLCD_core()
     if (menu == MENU_SYNC || menu == MENU_WEB)
       return 0;
   }
+
+  // SEND blocks the background core while typing, keep the screen on the main core
+  if (screen == SENDSCREEN)
+    return 0;
 
   // If BLE is set then let the BLE work on background alone
   if (app["config"]["ble"]["address"].is<const char *>())
@@ -114,6 +119,17 @@ void display_RLCD_loop()
         KeyboardScreen_render(&display, &u8g2);
     }
 
+    // Send Screen
+    else if (screen == SENDSCREEN)
+    {
+      // setup only once
+      if (screen != screen_prev)
+        SendScreen_setup(&display, &u8g2);
+      else
+        // loop
+        SendScreen_render(&display, &u8g2);
+    }
+
     // MENU SCREEN
     else if (screen == MENUSCREEN)
     {
@@ -152,6 +168,8 @@ void display_RLCD_loop()
         shouldDisplay = WP_needsDisplay();
       else if (screen == KEYBOARDSCREEN)
         shouldDisplay = KeyboardScreen_needsDisplay();
+      else if (screen == SENDSCREEN)
+        shouldDisplay = SendScreen_needsDisplay();
       else if (screen == MENUSCREEN)
         shouldDisplay = Menu_needsDisplay();
       else if (screen == UPDATESCREEN)
@@ -185,6 +203,12 @@ void display_RLCD_keyboard(int key, bool pressed, int index)
   {
     // send the key stroke to word processor
     KeyboardScreen_keyboard(key, pressed, index);
+  }
+
+  else if (screen == SENDSCREEN)
+  {
+    if (!pressed)
+      SendScreen_keyboard(key);
   }
 
   else if (screen == MENUSCREEN)

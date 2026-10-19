@@ -5,12 +5,15 @@
 #include "keyboard/keyboard.h"
 
 //
-#include "service/Editor/Editor.h"
-#include "service/Send/Send.h"
-
-//
 #include <NimBLEDevice.h>
 #include <BleKeyboard.h>
+#include "../BleUI/BleUI.h"
+
+#ifdef REV5
+#define BLE_DEVICE_NAME "Micro Journal 5"
+#else
+#define BLE_DEVICE_NAME "Micro Journal 6"
+#endif
 
 BleKeyboard bleKeyboard;
 int keyboardConnectedPrev = -1;
@@ -75,16 +78,12 @@ int _usb_keyboard_layers[3][TOTAL_KEYS] = {
 // stuck down (for example F1-down followed by 1-up).
 static int activeBleKeys[TOTAL_KEYS] = {};
 static int bleLayer = 0;
-static bool sendLeftPressed = false;
-static bool sendRightPressed = false;
-static bool sendChordActive = false;
 
 #ifdef REV5
 // Rev.5 keys come from the USB/BLE keyboard already translated by the locale,
 // with the HID keycode as the index. Remember what each keycode pressed so a
 // shift change before key-up still releases the same BLE key.
 static uint8_t activeRev5Keys[256] = {};
-static bool sendRequested = false;
 #endif
 
 static int KeyboardScreen_resolveKey(int keypadKey, int mappedKey)
@@ -100,38 +99,11 @@ static int KeyboardScreen_resolveKey(int keypadKey, int mappedKey)
     return mappedKey;
 }
 
-// function reference used for SEND
-void _send_key(int key)
-{
-    _debug("_send_key: %d\n", key);
-
-    // If needed, convert line endings
-    char c = (char)key;
-    if (c == '\n')
-    {
-        bleKeyboard.press('\n');
-        delay(5);
-        bleKeyboard.release('\n');
-    }
-    else if (isPrintable(c) || c == '\t') // Avoid sending non-printable control characters
-    {        
-        bleKeyboard.press(c);
-        delay(5);
-        bleKeyboard.release(c);
-    }
-
-    // BLE requires delay per key press to be stable
-    delay(10);
-}
-
 //
 void KeyboardScreen_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 {
     // clear screen
-    ptft->fillScreen(TFT_BLACK);
-
-    // register send function
-    send_register(_send_key);
+    BleUI_clear(ptft);
 
     // reset flags
     keyboardConnectedPrev = -1;
@@ -140,16 +112,12 @@ void KeyboardScreen_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     bleKeyboardExitStarted = false;
     bleLayer = 0;
     memset(activeBleKeys, 0, sizeof(activeBleKeys));
-    sendLeftPressed = false;
-    sendRightPressed = false;
-    sendChordActive = false;
 
 #ifdef REV5
     memset(activeRev5Keys, 0, sizeof(activeRev5Keys));
-    sendRequested = false;
 
     // Setup Bluetooth Keyboard
-    bleKeyboard.setName("Micro Journal 5");
+    bleKeyboard.setName(BLE_DEVICE_NAME);
 #else
     // load keyboard layout
     // Load Custom Keybaord Layout
@@ -162,7 +130,7 @@ void KeyboardScreen_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
         3);
 
     // Setup Bluetooth Keyboard
-    bleKeyboard.setName("Micro Journal 6");
+    bleKeyboard.setName(BLE_DEVICE_NAME);
 #endif
     bleKeyboard.begin();
     _log("Bluetooth Keyboard Started\n");
@@ -182,52 +150,26 @@ void KeyboardScreen_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     // Only redraw screen when connection status changes
     if (keyboardConnected != keyboardConnectedPrev)
     {
-        ptft->fillScreen(TFT_BLACK);
         keyboardConnectedPrev = keyboardConnected;
 
-        // Screen dimensions
-        int screenW = ptft->width();
-        int screenH = ptft->height();
+        BleUI_clear(ptft);
+        BleUI_header(ptft, "Bluetooth Keyboard");
 
-        // Title
-        ptft->setTextSize(2);
-        ptft->setTextColor(TFT_WHITE, TFT_BLACK);
-        ptft->setCursor(20, 10);
-        ptft->println("BLUETOOTH KEYBOARD");
-
-        // Status Box
-        ptft->setTextSize(2);
-        ptft->setCursor(45, 60);
         if (keyboardConnected)
         {
-            ptft->setTextColor(TFT_GREEN, TFT_BLACK);
-            ptft->print("Status: Connected");
+            BleUI_status(ptft, BLEUI_CONNECTED, "Connected");
+            BleUI_text(ptft, 0, "Typing goes to your computer.");
+            BleUI_text(ptft, 1, "Power off to end the session.");
         }
         else
         {
-            ptft->setTextColor(TFT_YELLOW, TFT_BLACK);
-            ptft->print("Status: Waiting...");
+            BleUI_status(ptft, BLEUI_WAITING, "Waiting for connection");
+            BleUI_text(ptft, 0, "Open Bluetooth on your computer and");
+            BleUI_text(ptft, 1, "pair with \"" BLE_DEVICE_NAME "\".");
         }
 
-        // Instruction Box
-        ptft->drawRoundRect(20, 120, screenW - 40, 100, 8, TFT_WHITE);
-        ptft->setTextSize(1);
-        ptft->setTextColor(TFT_CYAN, TFT_BLACK);
-        ptft->setCursor(40, 140);
-        ptft->println("Turn off device to end session.");
-#ifdef REV5
-        ptft->setCursor(40, 160);
-        ptft->println("Press MENU or ESC to SEND.");
-        ptft->setCursor(40, 180);
-        ptft->println("Press again to stop sending.");
-#else
-        ptft->setCursor(40, 160);
-        ptft->println("Press top-left and top-right keys");
-        ptft->setCursor(40, 180);
-        ptft->println("simultaneously to SEND.");
-#endif
-        ptft->setCursor(40, 200);
-        ptft->println("Hold ESC for 2 seconds to exit.");
+        BleUI_footer(ptft, "Hold Esc", "Exit");
+        BleUI_end(ptft);
     }
 }
 
@@ -235,10 +177,8 @@ void KeyboardScreen_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 // keyboard message from the USB/BLE keyboard or the front buttons of Rev.5
 static void KeyboardScreen_keyboard_rev5(int key, bool pressed, int index)
 {
-    JsonDocument &app = status();
-
     // The front MENU button and the ESC key both arrive as MENU.
-    // Tap to SEND (or stop sending), hold ESC to exit.
+    // Tap to send ESC, hold to exit.
     if (key == MENU)
     {
         if (pressed)
@@ -258,19 +198,10 @@ static void KeyboardScreen_keyboard_rev5(int key, bool pressed, int index)
             {
                 KeyboardScreen_exitBleKeyboardMode();
             }
-            else if (sendRequested && !app["send_finished"].as<bool>())
-            {
-                // sending in progress
-                app["send_stop"] = true;
-            }
             else if (bleKeyboard.isConnected())
             {
-                memset(activeRev5Keys, 0, sizeof(activeRev5Keys));
-                bleKeyboard.releaseAll();
-                sendRequested = true;
-                app["task"] = "send_start";
-                app["send_stop"] = false;
-                app["send_finished"] = false;
+                bleKeyboard.press(KEY_ESC);
+                bleKeyboard.release(KEY_ESC);
             }
         }
 
@@ -280,9 +211,6 @@ static void KeyboardScreen_keyboard_rev5(int key, bool pressed, int index)
     // no need any action when bluetooth keyboard is not connected
     if (!bleKeyboard.isConnected())
         return;
-
-    // any key pressed is going to stop sending text
-    app["send_stop"] = true;
 
     // Characters are sent as translated by the locale. Other keys (arrows,
     // home, page up...) are sent as the raw HID keycode, which BleKeyboard
@@ -332,36 +260,6 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
         return;
     }
 
-    // Track the SEND chord before ESC handling; index 0 is also ESC, and the
-    // former early return made the advertised corner-key chord unreachable.
-    if (bleKeyboard.isConnected() && (index == 0 || index == 11))
-    {
-        if (index == 0)
-            sendLeftPressed = pressed;
-        else
-            sendRightPressed = pressed;
-
-        if (!sendChordActive && sendLeftPressed && sendRightPressed)
-        {
-            sendChordActive = true;
-            escPressed = false;
-            memset(activeBleKeys, 0, sizeof(activeBleKeys));
-            bleKeyboard.releaseAll();
-            JsonDocument &app = status();
-            app["task"] = "send_start";
-            app["send_stop"] = false;
-            app["send_finished"] = false;
-            return;
-        }
-
-        if (sendChordActive)
-        {
-            if (!sendLeftPressed && !sendRightPressed)
-                sendChordActive = false;
-            return;
-        }
-    }
-
     // Handle ESC before checking the BLE connection. This makes it possible to
     // leave keyboard mode even while the ESP32 is still waiting to be paired.
     const bool isEscape = key == MENU || key == 27 || key == KEY_ESC;
@@ -400,9 +298,7 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
     if (!bleKeyboard.isConnected())
         return;
 
-    // any key pressed is going to stop sending text
     JsonDocument &app = status();
-    app["send_stop"] = true;
 
     // LOWER is pressed
     if (_usb_keyboard_layers[0][index] == KEY_F24)

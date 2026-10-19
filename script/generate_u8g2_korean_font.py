@@ -501,6 +501,15 @@ def main():
         ascii_source = (args[idx + 1], args[idx + 2])
         del args[idx:idx + 3]
 
+    # optional: --line-height <px> - paragraph advance (what print("\n")
+    # moves by). Defaults to the TTF's ascent + descent. Set it to the
+    # EditorFont lineHeight so rendered rows and the layout agree.
+    line_height = None
+    if "--line-height" in args:
+        idx = args.index("--line-height")
+        line_height = int(args[idx + 1])
+        del args[idx:idx + 2]
+
     ttf_path, size, out_path, font_name = args[0], int(args[1]), args[2], args[3]
     source_font = Path(ttf_path).name
 
@@ -542,6 +551,10 @@ def main():
             "descent_para": -descent,
         }
 
+    if line_height is not None:
+        # extra leading goes above the text: ascent_para - descent_para = line_height
+        metrics["ascent_para"] = line_height + metrics["descent_para"]
+
     font_data, layout = build_font(glyphs, metrics)
     verify(font_data, glyphs)
 
@@ -557,7 +570,8 @@ def main():
             f"  {source_font} rasterized at {size}px.\n"
             f"  Glyphs: {len(glyphs)} (ASCII, Hangul compatibility jamo,\n"
             f"  KS X 1001 syllables). Latin advance {latin_adv}px, Hangul {hangul_adv}px.\n"
-            f"  ascent {ascent} descent {descent}\n"
+            f"  ascent {ascent} descent {descent}"
+            + (f" line height {line_height}" if line_height is not None else "") + "\n"
             "*/\n"
             "#include <u8g2_fonts.h>\n\n"
             f"const uint8_t {font_name}[{len(font_data)}] U8G2_FONT_SECTION(\"{font_name}\") = {{\n"

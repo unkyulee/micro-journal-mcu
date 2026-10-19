@@ -13,6 +13,7 @@
 #include "Menu/Menu.h"
 #include "Update/Update.h"
 #include "KeyboardScreen/KeyboardScreen.h"
+#include "SendScreen/SendScreen.h"
 
 // Display Frame Buffer Setup
 uint8_t *framebuffer = NULL;
@@ -37,6 +38,10 @@ int display_EPD_core()
         if (menu == MENU_SYNC || menu == MENU_WEB)
             return 0;
     }
+
+    // SEND blocks the background core while typing, keep the screen on the main core
+    if (screen == SENDSCREEN)
+        return 0;
 
     // by default run at the second core separated from keyboard loop
     return 1;
@@ -159,6 +164,17 @@ void display_EPD_loop()
                 KeyboardScreen_render();
         }
 
+        // SEND SCREEN
+        else if (screen == SENDSCREEN)
+        {
+            // setup only once
+            if (screen != screen_prev)
+                SendScreen_setup();
+            else
+                // loop
+                SendScreen_render();
+        }
+
         //
         app["screen_prev"] = screen;
         screen_prev = screen;
@@ -206,6 +222,12 @@ void display_EPD_keyboard(int key, bool pressed, int index)
     {
         if (!pressed)
             Update_keyboard(key);
+    }
+
+    else if (screen == SENDSCREEN)
+    {
+        if (!pressed)
+            SendScreen_keyboard(key);
     }
 }
 

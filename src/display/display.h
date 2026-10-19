@@ -13,6 +13,7 @@
 #define SLEEPSCREEN 4
 #define KEYBOARDSCREEN 5
 #define UPDATESCREEN 6
+#define SENDSCREEN 7
 
 // menu id
 #define MENU_HOME 0

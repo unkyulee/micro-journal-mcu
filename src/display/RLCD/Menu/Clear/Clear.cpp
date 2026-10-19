@@ -20,7 +20,7 @@ void Clear_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     u8->println();
     u8->println(" WARNING: This action will delete");
     u8->println(" the selected file.");
-    u8->println(" Make sure to sync your content");
+    u8->println(" Make sure to back up your content");
     u8->println(" before confirming");
     u8->println(" to prevent loss of data.");
     u8->println();

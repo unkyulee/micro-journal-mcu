@@ -30,7 +30,7 @@ void Sync_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 
     // header
     u8->setCursor(0, 50);
-    u8->println(" SYNC & BACKUP ");
+    u8->println(" NETWORK BACKUP ");
     u8->println("");
 
     // SYNC STATE
@@ -40,7 +40,7 @@ void Sync_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     if (sync_state == SYNC_START)
     {
         //
-        u8->println("Preparing Sync Process ...");
+        u8->println("Preparing Network Backup ...");
 
         //
         sync_start_request();
@@ -71,7 +71,7 @@ void Sync_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     else if (sync_state == SYNC_COMPLETED)
     {
         //
-        u8->println("SYNC Completed. Press any key to exit");
+        u8->println("NETWORK BACKUP Completed. Press any key to exit");
     }
 }
 
