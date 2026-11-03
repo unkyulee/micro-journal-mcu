@@ -66,6 +66,7 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     ptft->println(" [G] BACKGROUND COLOR");
     ptft->println(" [C] FONT COLOR");
+    ptft->println(" [T] WORD RAIN");
 
     ptft->println();
     ptft->println(" [B] BACK ");
@@ -176,6 +177,12 @@ void Home_keyboard(char key)
         app["menu"]["state"] = MENU_LANGUAGE;
     }
 #endif
+
+    else if (key == 't' || key == 'T')
+    {
+        // typing game
+        app["screen"] = GAMESCREEN;
+    }
 
     else if (key == 'g' || key == 'G')
     {

@@ -20,6 +20,7 @@ U8G2_FOR_ST73XX u8g2;
 #include "Update/Update.h"
 #include "KeyboardScreen/KeyboardScreen.h"
 #include "SendScreen/SendScreen.h"
+#include "GameScreen/GameScreen.h"
 
 int display_RLCD_core()
 {
@@ -130,6 +131,17 @@ void display_RLCD_loop()
         SendScreen_render(&display, &u8g2);
     }
 
+    // Game Screen
+    else if (screen == GAMESCREEN)
+    {
+      // setup only once
+      if (screen != screen_prev)
+        GameScreen_setup(&display, &u8g2);
+      else
+        // loop
+        GameScreen_render(&display, &u8g2);
+    }
+
     // MENU SCREEN
     else if (screen == MENUSCREEN)
     {
@@ -170,6 +182,8 @@ void display_RLCD_loop()
         shouldDisplay = KeyboardScreen_needsDisplay();
       else if (screen == SENDSCREEN)
         shouldDisplay = SendScreen_needsDisplay();
+      else if (screen == GAMESCREEN)
+        shouldDisplay = GameScreen_needsDisplay();
       else if (screen == MENUSCREEN)
         shouldDisplay = Menu_needsDisplay();
       else if (screen == UPDATESCREEN)
@@ -209,6 +223,11 @@ void display_RLCD_keyboard(int key, bool pressed, int index)
   {
     if (!pressed)
       SendScreen_keyboard(key);
+  }
+
+  else if (screen == GAMESCREEN)
+  {
+    GameScreen_keyboard(key, pressed);
   }
 
   else if (screen == MENUSCREEN)

@@ -11,6 +11,7 @@
 #include "KeyboardScreen/KeyboardScreen.h"
 #include "WakeUp/WakeUp.h"
 #include "Sleep/Sleep.h"
+#include "GameScreen/GameScreen.h"
 
 // Invoke library, pins defined in platformio.ini
 TFT_eSPI tft = TFT_eSPI();
@@ -156,6 +157,17 @@ void display_ST7735_loop()
         KeyboardScreen_render(&tft, &u8f);
     }
 
+    // Game Screen
+    else if (screen == GAMESCREEN)
+    {
+      // setup only once
+      if (screen != screen_prev)
+        GameScreen_setup(&tft, &u8f);
+      else
+        // loop
+        GameScreen_render(&tft, &u8f);
+    }
+
     //
     app["screen_prev"] = screen;
   }
@@ -201,5 +213,9 @@ void display_ST7735_keyboard(int key, bool pressed, int index)
   else if (screen == KEYBOARDSCREEN)
   {
     KeyboardScreen_keyboard(key, pressed, index);
+  }
+  else if (screen == GAMESCREEN)
+  {
+    GameScreen_keyboard(key, pressed);
   }
 }

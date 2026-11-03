@@ -11,6 +11,7 @@
 #include "Update/Update.h"
 #include "KeyboardScreen/KeyboardScreen.h"
 #include "SendScreen/SendScreen.h"
+#include "GameScreen/GameScreen.h"
 
 // Invoke library, pins defined in platformio.ini
 TFT_eSPI tft = TFT_eSPI();
@@ -140,6 +141,17 @@ void display_ILI9341_loop()
         SendScreen_render(&tft, &u8f);
     }
 
+    // Game Screen
+    else if (screen == GAMESCREEN)
+    {
+      // setup only once
+      if (screen != screen_prev)
+        GameScreen_setup(&tft, &u8f);
+      else
+        // loop
+        GameScreen_render(&tft, &u8f);
+    }
+
     // SLEEP SCREEN
     else if (screen == SLEEPSCREEN)
     {
@@ -212,6 +224,11 @@ void display_ILI9341_keyboard(int key, bool pressed, int index)
   {
     if (!pressed)
       SendScreen_keyboard(key);
+  }
+
+  else if (screen == GAMESCREEN)
+  {
+    GameScreen_keyboard(key, pressed);
   }
 
   else if (screen == SLEEPSCREEN)

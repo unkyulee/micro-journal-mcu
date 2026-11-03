@@ -32,9 +32,9 @@ void handleTapBack(Button2 &b)
         display_keyboard('b', false); // send B when menu
     }
 
-    else if (screen == SENDSCREEN)
+    else if (screen == SENDSCREEN || screen == GAMESCREEN)
     {
-        // leave SEND screen
+        // leave SEND or GAME screen
         display_keyboard(27, false);
     }
 

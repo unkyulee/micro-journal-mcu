@@ -47,6 +47,7 @@ void Home_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     // narrow left column - show custom keymap on its own line
     if (app["keyboard_custom"].as<bool>())
         u8->println("     (Custom)");
+    u8->println(" [T] WORD RAIN");
 
     u8->println();
     u8->println(" [B] BACK ");
@@ -120,6 +121,12 @@ void Home_keyboard(char key)
     {
         // act as a bluetooth keyboard to SEND text to a computer
         app["screen"] = SENDSCREEN;
+    }
+
+    else if (key == 't' || key == 'T')
+    {
+        // typing game
+        app["screen"] = GAMESCREEN;
     }
 
     else if (key == 'e' || key == 'E')

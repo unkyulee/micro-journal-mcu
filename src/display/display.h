@@ -14,6 +14,7 @@
 #define KEYBOARDSCREEN 5
 #define UPDATESCREEN 6
 #define SENDSCREEN 7
+#define GAMESCREEN 8
 
 // menu id
 #define MENU_HOME 0

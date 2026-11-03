@@ -19,6 +19,7 @@ const char *menu[] = {
     "FW Update",   // 8
     "Delete Text", // 9
     "Language",    // 10
+    "Word Rain",   // 11
     "Exit"};
 
 //
@@ -210,6 +211,13 @@ void Home_keyboard(char key, bool pressed)
         {
             _debug("Language Selected\n");
             app["menu"]["state"] = MENU_LANGUAGE;
+        }
+
+        // 11 - Word Rain typing game
+        else if (selectedHome == 11)
+        {
+            _debug("Word Rain Selected\n");
+            app["screen"] = GAMESCREEN;
         }
     }
 }
