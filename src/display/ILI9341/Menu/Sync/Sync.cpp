@@ -76,6 +76,15 @@ void Sync_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
         //
         ptft->println("NETWORK BACKUP Completed. Press any key to exit");
     }
+
+    // WiFi or the sync url still has to be set up
+    else if (sync_state == SYNC_NOT_CONFIGURED)
+    {
+        String lines[12];
+        int count = sync_setup_lines(lines, 12);
+        for (int i = 0; i < count; i++)
+            ptft->println(" " + lines[i]);
+    }
 }
 
 //
@@ -89,5 +98,11 @@ void Sync_keyboard(char key)
     if (sync_state == SYNC_COMPLETED || sync_state == SYNC_ERROR)
     {
         app["screen"] = WORDPROCESSOR;
+    }
+
+    // back to the menu, where WiFi setup and Drive Mode are
+    else if (sync_state == SYNC_NOT_CONFIGURED)
+    {
+        app["menu"]["state"] = MENU_HOME;
     }
 }

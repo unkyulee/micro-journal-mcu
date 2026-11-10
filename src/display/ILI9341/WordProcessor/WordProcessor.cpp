@@ -377,7 +377,7 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     int wordCount = Editor::getInstance().wordCountFile + Editor::getInstance().wordCountBuffer;
     String wordCountFormatted = formatNumber(wordCount);
-    ptft->printf("%s words", wordCountFormatted);
+    ptft->printf("%s words", wordCountFormatted.c_str());
 
     String layout = app["config"]["keyboard_layout"].as<String>();
     if (layout == "null" || layout.isEmpty())

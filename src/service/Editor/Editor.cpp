@@ -12,6 +12,9 @@
 // defined below - moves a file offset back to a UTF-8 character start
 static size_t alignToCharStart(File &file, size_t pos);
 
+// defined below - finishes or discards a save that was interrupted
+static void recoverTempFile(const String &fileName);
+
 //
 // Editor Initialization with column and row setup
 void Editor::init(int cols, int rows, const EditorFont *font)
@@ -821,8 +824,13 @@ void Editor::clearFile()
 
     // Step 1. Check if the backup file exists
     // remove it if already exists
-    String backupFileName = format("/%s_backup.txt", fileName.c_str());
-    _debug("backupFilename: %s\n", backupFileName);
+    // "/0.txt" -> "/0_backup.txt"
+    // (fileName already starts with a slash and carries the extension)
+    String baseName = fileName;
+    if (baseName.endsWith(".txt"))
+        baseName.remove(baseName.length() - 4);
+    String backupFileName = baseName + "_backup.txt";
+    _debug("backupFilename: %s\n", backupFileName.c_str());
     if (gfs()->exists(backupFileName.c_str()))
     {
         // remove the backup file
@@ -837,7 +845,7 @@ void Editor::clearFile()
     else
     {
         //
-        app["error"] = format("Error making a backup file. %s\n", backupFileName);
+        app["error"] = format("Error making a backup file. %s\n", backupFileName.c_str());
         app["screen"] = ERRORSCREEN;
 
         //
@@ -1531,6 +1539,7 @@ void Editor::removeLastWord()
     if (length == 0)
         return;
 
+    // skip the spaces after the last word
     int end = length - 1;
     while (end >= 0 && buffer[end] == ' ')
         end--;
@@ -1538,18 +1547,22 @@ void Editor::removeLastWord()
     if (end < 0)
         return;
 
-    int start = end;
-    while (start >= 0 && buffer[start] != ' ' && buffer[start] != '\n')
-        start--;
-
-    if (start <= 0)
+    if (buffer[end] == '\n')
     {
-        start = 0;
-        buffer[0] = '\0';
+        // the text ends with a line break: take back that one break
+        // (and the spaces after it), the word above it stays
+        buffer[end] = '\0';
     }
     else
     {
-        buffer[start] = ' ';
+        // find the delimiter in front of the last word
+        int start = end;
+        while (start >= 0 && buffer[start] != ' ' && buffer[start] != '\n')
+            start--;
+
+        // Cut right after the delimiter and keep the delimiter itself as
+        // it is - a line break in front of the word must stay a line
+        // break. start is -1 when the word is the whole buffer.
         buffer[start + 1] = '\0';
     }
 

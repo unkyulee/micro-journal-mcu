@@ -76,6 +76,13 @@ void app_setup()
 #endif
     _log("Setting Baud Rate: %d\n", 115200);
 
+#ifdef BOARD_ESP32_S3
+    // why the device (re)started - the first thing to look at after an
+    // unexpected reset: 1 power on, 3 software restart, 4 crash,
+    // 5-7 watchdog, 9 brownout (supply voltage dropped)
+    _log("Reset reason: %d\n", (int)esp_reset_reason());
+#endif
+
 #if defined(BOARD_HAS_PSRAM)
     // Check if PSRAM is detected and enabled
     if (psramFound())

@@ -34,10 +34,8 @@ void Home_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     //
 
     //
-    if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
-    {
-        u8->println(" [N] NETWORK BACKUP");
-    }
+    // always listed: the backup screen explains what to set up
+    u8->println(" [N] NETWORK BACKUP");
 
     u8->println(" [W] WIFI SETUP");
     u8->println(" [E] DRIVE MODE");
@@ -80,11 +78,9 @@ void Home_keyboard(char key)
     // network backup
     if (key == 'N' || key == 'n')
     {
-        if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
-        {
-            // to sync
-            app["menu"]["state"] = MENU_SYNC;
-        }
+        // always listed: the backup screen explains what to set up
+        // to sync
+        app["menu"]["state"] = MENU_SYNC;
     }
 
     else if (key == 'D' || key == 'd')

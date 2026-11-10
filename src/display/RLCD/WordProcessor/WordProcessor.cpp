@@ -393,7 +393,7 @@ void WP_render_status(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 
     int wordCount = Editor::getInstance().wordCountFile + Editor::getInstance().wordCountBuffer;
     String wordCountFormatted = formatNumber(wordCount);
-    u8->printf("%s WORDS", wordCountFormatted);
+    u8->printf("%s WORDS", wordCountFormatted.c_str());
 
     // LOCALE
     String locale = app["config"]["keyboard_layout"].as<String>();

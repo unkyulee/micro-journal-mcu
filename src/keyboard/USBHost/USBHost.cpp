@@ -54,10 +54,11 @@ class MyEspUsbHost : public EspUsbHost
         r.reserved = report.reserved;
         memcpy(r.keycode, report.keycode, 6);
 
-        // Send to queue from ISR-safe context
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        xQueueSendFromISR(usbHidQueue, &r, &xHigherPriorityTaskWoken);
-        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        // This callback runs in task context: the USB host library invokes
+        // it from usbHost.task() (usb_host_client_handle_events), not from
+        // an interrupt, so the regular queue call is the right one.
+        // Don't wait when the queue is full, a report is dropped instead.
+        xQueueSend(usbHidQueue, &r, 0);
     }
 };
 

@@ -1052,6 +1052,17 @@ static void IRAM_ATTR provide_out_task(void *arg)
 }
 
 
+// true when every pixel of a 4bpp row is white (0xF)
+static inline __attribute__((always_inline)) bool line_is_white(const uint32_t *line)
+{
+    for (uint32_t j = 0; j < EPD_WIDTH / 8; j++)
+    {
+        if (line[j] != 0xFFFFFFFF)
+            return false;
+    }
+    return true;
+}
+
 static void IRAM_ATTR feed_display(OutputParams *params)
 {
     Rect_t area = params->area;
@@ -1077,6 +1088,19 @@ static void IRAM_ATTR feed_display(OutputParams *params)
         }
         uint8_t output[EPD_WIDTH / 2];
         xQueueReceive(output_queue, output, portMAX_DELAY);
+
+        // A row that is white from edge to edge has nothing to draw: in
+        // BLACK_ON_WHITE mode a white pixel is a no-op in every frame (see
+        // update_LUT). Skipping it costs a few microseconds instead of a
+        // full line shifted out to the panel, and a page of text is mostly
+        // such rows - the gaps between lines and everything below the last
+        // line. Rows are skipped the same way as those outside the area.
+        if (params->mode == BLACK_ON_WHITE && line_is_white((const uint32_t *)output))
+        {
+            skip_row(contrast_lut[params->frame]);
+            continue;
+        }
+
         calc_epd_input_4bpp((uint32_t *)output, epd_get_current_buffer(),
                             params->frame, conversion_lut);
         write_row(contrast_lut[params->frame]);

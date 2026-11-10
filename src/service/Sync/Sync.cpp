@@ -5,7 +5,30 @@
 
 //
 #include <HTTPClient.h>
-#include <base64.h>
+
+
+// at least one network saved in wifi.json (loaded by wifi_config_load)
+static bool sync_wifi_configured()
+{
+    JsonDocument &app = status();
+    JsonArray accessPoints = app["wifi"]["access_points"].as<JsonArray>();
+    for (JsonVariant accessPoint : accessPoints)
+    {
+        const char *ssid = accessPoint["ssid"] | "";
+        if (ssid[0] != '\0')
+            return true;
+    }
+    return false;
+}
+
+// "sync": { "url": "..." } in config.json
+static bool sync_url_configured()
+{
+    JsonDocument &app = status();
+    String url = app["config"]["sync"]["url"] | "";
+    url.trim();
+    return !url.isEmpty();
+}
 
 // Reset all the sync related flags
 void sync_init()
@@ -17,7 +40,55 @@ void sync_init()
     app["sync_error"] = "";
     app["sync_message"] = "";
 
-    _log("[sync_init] sync_init\n");
+    // nothing to start yet, the screen explains what is missing
+    if (!sync_wifi_configured() || !sync_url_configured())
+        app["sync_state"] = SYNC_NOT_CONFIGURED;
+
+    // Earlier versions uploaded from a temporary encoded copy of the
+    // journal and could leave it behind. Remove it here, while WiFi is
+    // still off.
+    String leftover = Editor::getInstance().fileName + ".base64";
+    if (!Editor::getInstance().fileName.isEmpty() && gfs()->exists(leftover.c_str()))
+        gfs()->remove(leftover.c_str());
+
+    _log("[sync_init] sync_init state %d\n", app["sync_state"].as<int>());
+}
+
+//
+int sync_setup_lines(String *lines, int max)
+{
+    int count = 0;
+    auto add = [&](const char *line)
+    {
+        if (count < max)
+            lines[count++] = line;
+    };
+
+    bool wifi = sync_wifi_configured();
+    bool url = sync_url_configured();
+    if (wifi && url)
+        return 0;
+
+    // lines are kept short enough for the narrowest screen
+    if (!wifi)
+    {
+        add("WiFi is not set up.");
+        add("Use MENU > [W] WIFI SETUP.");
+        add("");
+    }
+
+    if (!url)
+    {
+        add("Google Drive backup is not set up.");
+        add("Use MENU > [E] DRIVE MODE to edit");
+        add("config.json and add the backup url:");
+        add("  \"sync\": { \"url\": \"...\" }");
+        add("");
+    }
+
+    add("Press any key to go back");
+
+    return count;
 }
 
 // request background service to pick up the request
@@ -233,147 +304,292 @@ bool sync_connect_wifi(JsonDocument &app, const char *ssid, const char *password
     }
 }
 
+// how long to wait for the server's answer to the upload, in milliseconds
+// (HTTPClient keeps this in 16 bits, so 65 seconds is the ceiling)
+#define SYNC_RESPONSE_TIMEOUT 60000
+
+// Decide whether the upload worked. Returns the message for the screen,
+// empty when the backup succeeded.
+//   httpCode  - answer to the POST
+//   resultUrl - where a redirect answer points to, empty otherwise
+static String sync_result(int httpCode, const String &resultUrl)
+{
+    // connection errors: no route, timeout, TLS
+    if (httpCode < 0)
+        return format("Backup failed: %s", HTTPClient::errorToString(httpCode).c_str());
+
+    // the server refused or failed the upload
+    if (httpCode >= 400)
+        return format("Backup failed: HTTP %d", httpCode);
+
+    // a server that answers directly, without a redirect
+    if (resultUrl.isEmpty())
+        return "";
+
+    // Google Apps Script: the script has run by now, and what it returned -
+    // {"status":"OK"} or {"status":"ERROR",...} - is read from the address
+    // the redirect points to. The HTTP status alone says nothing, a script
+    // that failed still answers 200.
+    HTTPClient http;
+    http.begin(resultUrl);
+    http.setTimeout(30000);
+    int code = http.GET();
+    String body = code == HTTP_CODE_OK ? http.getString() : String();
+    http.end();
+
+    _log("Backup result: %d %s\n", code, body.substring(0, 80).c_str());
+
+    // The file was delivered and the script ran; only its report could not
+    // be fetched. Not worth calling the backup failed.
+    if (code != HTTP_CODE_OK)
+        return "";
+
+    JsonDocument result;
+    if (deserializeJson(result, body))
+    {
+        // not the script's JSON: a Google sign-in page, when the web app
+        // is not deployed with access for "Anyone"
+        return "Unexpected reply. Set script access: Anyone";
+    }
+
+    String state = result["status"] | "";
+    if (state == "ERROR")
+    {
+        // the script could not write the file, usually because the folder
+        // it saves to is missing. It also emails the details.
+        return "Google script error. Check uJournal folder.";
+    }
+
+    return "";
+}
+
+// Reads a file and hands it out base64 encoded, the form the backup script
+// expects, while it is being uploaded.
+//
+// The encoded text used to be written to a temporary file first. That meant
+// erasing and writing flash while the WiFi radio was on, and the two together
+// can pull the 3.3V supply low enough to reset the device (the same reason
+// Drive Mode lowers its transmit power). Encoding on the fly needs no flash
+// write at all, and no free space for a second copy of the journal.
+class Base64FileStream : public Stream
+{
+public:
+    Base64FileStream(File &file) : _file(file) {}
+
+    // length of the whole encoded text, known before anything is read
+    size_t encodedSize()
+    {
+        return ((_file.size() + 2) / 3) * 4;
+    }
+
+    // -1 at the end of the file, which is what stops the upload loop
+    int available() override
+    {
+        if (_pos >= _len)
+            fill();
+        return _len > _pos ? (int)(_len - _pos) : -1;
+    }
+
+    int read() override
+    {
+        if (available() <= 0)
+            return -1;
+        return _encoded[_pos++];
+    }
+
+    int peek() override
+    {
+        if (available() <= 0)
+            return -1;
+        return _encoded[_pos];
+    }
+
+    size_t readBytes(char *buffer, size_t length) override
+    {
+        size_t count = 0;
+        while (count < length && available() > 0)
+        {
+            size_t size = _len - _pos;
+            if (size > length - count)
+                size = length - count;
+
+            memcpy(buffer + count, _encoded + _pos, size);
+            _pos += size;
+            count += size;
+        }
+        return count;
+    }
+
+    void flush() override {}
+    size_t write(uint8_t) override { return 0; }
+
+private:
+    // encode the next piece of the file
+    void fill()
+    {
+        static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+        _pos = 0;
+        _len = 0;
+
+        // Always a multiple of 3 bytes, so padding can only appear at the
+        // very end of the file. Keep reading until the piece is full: a
+        // short read in the middle would put padding in the middle.
+        uint8_t raw[RAW_SIZE];
+        size_t count = 0;
+        while (count < RAW_SIZE)
+        {
+            size_t size = _file.read(raw + count, RAW_SIZE - count);
+            if (size == 0)
+                break;
+            count += size;
+        }
+
+        for (size_t i = 0; i < count; i += 3)
+        {
+            size_t left = count - i;
+            uint32_t b = (uint32_t)raw[i] << 16;
+            if (left > 1)
+                b |= (uint32_t)raw[i + 1] << 8;
+            if (left > 2)
+                b |= raw[i + 2];
+
+            _encoded[_len++] = table[(b >> 18) & 0x3F];
+            _encoded[_len++] = table[(b >> 12) & 0x3F];
+            _encoded[_len++] = left > 1 ? table[(b >> 6) & 0x3F] : '=';
+            _encoded[_len++] = left > 2 ? table[b & 0x3F] : '=';
+        }
+    }
+
+    static const size_t RAW_SIZE = 300; // multiple of 3
+    File &_file;
+    char _encoded[RAW_SIZE / 3 * 4];
+    size_t _len = 0;
+    size_t _pos = 0;
+};
+
 void sync_send()
 {
-    _log("[sync_send] Sync Send\n");
+    _log("[sync_send] Backup Send\n");
 
     //
     JsonDocument &app = status();
 
-    // preparing the file
-    app["sync_message"] = "Preparing the file ... ";
-    app["clear"] = true;
+    // The order below matters: everything that needs the network happens
+    // first, then WiFi is switched off (sync_stop), and only then the
+    // result goes on screen. Nothing writes to flash while the radio is on.
+
+    // where to send the file
+    String url = app["config"]["sync"]["url"] | "";
+    url.trim();
+    if (url.isEmpty())
+    {
+        sync_stop();
+
+        app["sync_error"] = "BACKUP URL NOT FOUND\n";
+        app["sync_state"] = SYNC_ERROR;
+        app["clear"] = true;
+
+        _log(app["sync_error"].as<const char *>());
+        return;
+    }
 
     // Get the input file
     File inputFile = gfs()->open(Editor::getInstance().fileName.c_str(), "r");
     if (!inputFile)
     {
+        sync_stop();
+
         app["sync_error"] = "Error opening input file!\n";
         app["sync_state"] = SYNC_ERROR;
         app["clear"] = true;
 
-        _log(app["sync_error"]);
-
-        sync_stop();
+        _log(app["sync_error"].as<const char *>());
         return;
     }
 
     // Check file size
     if (inputFile.size() == 0)
     {
-        app["sync_error"] = "File is empty. Sync stopped.\n";
-        app["sync_state"] = SYNC_ERROR;
-        app["clear"] = true;
-
-        _log(app["sync_error"]);
-
-        sync_stop();
-        return;
-    }
-
-    // convert to BASE64 file
-    String base64Filename = Editor::getInstance().fileName + ".base64";
-    File outputFile = gfs()->open(base64Filename.c_str(), "w");
-    if (!outputFile)
-    {
-        //
         inputFile.close();
-        delay(100);
-
-        //
         sync_stop();
 
-        //
-        app["sync_error"] = "Error opening base64 file!\n";
+        app["sync_error"] = "File is empty. Nothing to back up.\n";
         app["sync_state"] = SYNC_ERROR;
         app["clear"] = true;
 
-        _log(app["sync_error"]);
-
+        _log(app["sync_error"].as<const char *>());
         return;
     }
-
-    // Convert to BASE64
-    const int bufferSize = 900; // base64 encoding is done per 3 bytes
-    uint8_t buffer[bufferSize];
-    while (inputFile.available())
-    {
-        size_t bytesRead = inputFile.read(buffer, bufferSize);
-        if (bytesRead > 0)
-        {
-            // Encode buffer to base64 and write to output file
-            String txtBase64 = base64::encode(buffer, bytesRead);
-            outputFile.print(txtBase64);
-        }
-    }
-    //
-    inputFile.close();
-    delay(100);
-    outputFile.close();
-    delay(100);
 
     //
     app["sync_message"] = "Sending file to drive ... ";
     app["clear"] = true;
 
-    // send file to google drive
-    String url = app["config"]["sync"]["url"].as<String>();
-    if (!url.isEmpty() && url != "null")
+    _log("Requesting backup ... \n");
+    _log("%s\n", url.c_str());
+
+    int httpCode;
+    String resultUrl;
     {
-        _log("Requesting sync ... \n");
-        _log("%s\n", url.c_str());
+        // the file is encoded as it is read, see Base64FileStream
+        Base64FileStream body(inputFile);
+        size_t bodySize = body.encodedSize();
+        _log("Sending file: %s, %d bytes encoded\n",
+             Editor::getInstance().fileName.c_str(), (int)bodySize);
 
         // prepare http client
         HTTPClient http;
         http.begin(url);
-        http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
 
-        // Read file in chunks and send via POST request
-        File file = gfs()->open(base64Filename.c_str(), "r");
-        if (!file)
+        // close the connection when done: the result is fetched over a
+        // second secure connection, and two of them open at once need
+        // more memory than there may be
+        http.setReuse(false);
+
+        // A Google Apps Script only answers after it has run - decoding the
+        // text and creating the file on Drive takes several seconds. The
+        // default of 5 seconds gave up on a backup that was in fact working
+        // ("read Timeout").
+        http.setTimeout(SYNC_RESPONSE_TIMEOUT);
+
+        httpCode = http.sendRequest("POST", &body, bodySize);
+        _log("Backup response: %d\n", httpCode);
+
+        // Apps Script never answers the POST with the result itself: it
+        // replies 302 and the script's own output waits at that address.
+        // (HTTPClient does not follow redirects for a streamed upload.)
+        if (httpCode == HTTP_CODE_MOVED_PERMANENTLY || httpCode == HTTP_CODE_FOUND ||
+            httpCode == HTTP_CODE_SEE_OTHER || httpCode == HTTP_CODE_TEMPORARY_REDIRECT)
         {
-            app["sync_error"] = "Failed to open file" + base64Filename;
-            app["sync_state"] = SYNC_ERROR;
-            app["clear"] = true;
-
-            http.end();
-
-            sync_stop();
-
-            return;
+            resultUrl = http.getLocation();
         }
-
-        //
-        _log("Sending file: %s\n", base64Filename.c_str());
-        _log("File size: %d bytes\n", file.size());
-        http.sendRequest("POST", &file, file.size());
-        _log("File sent successfully\n");
 
         // close http connection
         http.end();
+    }
 
-        // Close file
-        file.close();
-        delay(100);
+    //
+    inputFile.close();
 
-        //
-        sync_stop();
+    // work out the outcome while WiFi is still up
+    String error = sync_result(httpCode, resultUrl);
 
-        //
+    // radio off before anything else happens
+    sync_stop();
+
+    if (error.isEmpty())
+    {
         app["sync_state"] = SYNC_COMPLETED;
         app["clear"] = true;
-        _log("Sync State: SYNC_COMPLETED\n");
+        _log("Backup State: SYNC_COMPLETED\n");
     }
     else
     {
-        //
-        app["sync_error"] = "SYNC URL NOT FOUND\n";
+        app["sync_error"] = error;
         app["sync_state"] = SYNC_ERROR;
         app["clear"] = true;
 
-        _log(app["sync_error"]);
-
-        //
-        sync_stop();
+        _log("Backup State: SYNC_ERROR %s\n", error.c_str());
     }
 }

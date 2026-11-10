@@ -30,13 +30,10 @@ void Home_render()
     int cursorX = 10;
     int cursorY = 65;
 
-    // NETWORK BACKUP
-    if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
-    {
-        cursorX = 10;
-        cursorY += 35;
-        writeln((GFXfont *)&systemFont, " [N] NETWORK BACKUP", &cursorX, &cursorY, display_EPD_framebuffer());
-    }
+    // always listed: the backup screen explains what to set up
+    cursorX = 10;
+    cursorY += 35;
+    writeln((GFXfont *)&systemFont, " [N] NETWORK BACKUP", &cursorX, &cursorY, display_EPD_framebuffer());
 
     // WIFI
     cursorX = 10;
@@ -116,11 +113,9 @@ void Home_keyboard(char key)
     // network backup
     if (key == 'N' || key == 'n')
     {
-        if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
-        {
-            // to sync
-            app["menu"]["state"] = MENU_SYNC;
-        }
+        // always listed: the backup screen explains what to set up
+        // to sync
+        app["menu"]["state"] = MENU_SYNC;
     }
 
     // delete file

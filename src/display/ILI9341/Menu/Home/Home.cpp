@@ -42,10 +42,8 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     ptft->println();
 
     //
-    if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
-    {
-        ptft->println(" [N] NETWORK BACKUP");
-    }
+    // always listed: the backup screen explains what to set up
+    ptft->println(" [N] NETWORK BACKUP");
 
     ptft->println(" [W] WIFI SETUP");
     ptft->println(" [E] DRIVE MODE");
@@ -110,11 +108,9 @@ void Home_keyboard(char key)
     // network backup
     if (key == 'N' || key == 'n')
     {
-        if (app["config"]["sync"]["url"].as<String>().isEmpty() == false)
-        {
-            // to sync
-            app["menu"]["state"] = MENU_SYNC;
-        }
+        // always listed: the backup screen explains what to set up
+        // to sync
+        app["menu"]["state"] = MENU_SYNC;
     }
 
     else if (key == 'D' || key == 'd')

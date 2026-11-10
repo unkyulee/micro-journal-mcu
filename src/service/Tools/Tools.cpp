@@ -33,9 +33,7 @@ size_t fileSize(String fileName)
         File file = gfs()->open(fileName.c_str(), "r");
         if (!file)
         { // something bad happened
-            char buffer[32];
-            sprintf(buffer, "Failed to open a file. %s\n", fileName);
-            _log(buffer);
+            _log("Failed to open a file. %s\n", fileName.c_str());
             file_size = -1;
         }
         else

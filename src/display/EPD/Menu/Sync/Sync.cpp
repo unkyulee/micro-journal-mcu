@@ -36,7 +36,7 @@ void Sync_render()
     int cursorY = 120;
     writeln(
         (GFXfont *)&systemFont,
-        format("NETWORK BACKUP for %s", Editor::getInstance().fileName).c_str(),
+        format("NETWORK BACKUP for %s", Editor::getInstance().fileName.c_str()).c_str(),
         &cursorX, &cursorY,
         display_EPD_framebuffer());
 
@@ -105,6 +105,30 @@ void Sync_render()
             display_EPD_framebuffer());
     }
 
+    // WiFi or the sync url still has to be set up
+    else if (sync_state == SYNC_NOT_CONFIGURED)
+    {
+        String lines[12];
+        int count = sync_setup_lines(lines, 12);
+
+        cursorY += 15;
+        for (int i = 0; i < count; i++)
+        {
+            cursorX = 30;
+            cursorY += 35;
+
+            // an empty line only moves down
+            if (lines[i].isEmpty())
+                continue;
+
+            writeln(
+                (GFXfont *)&systemFont,
+                lines[i].c_str(),
+                &cursorX, &cursorY,
+                display_EPD_framebuffer());
+        }
+    }
+
 }
 
 //
@@ -118,5 +142,11 @@ void Sync_keyboard(char key)
     if (sync_state == SYNC_COMPLETED || sync_state == SYNC_ERROR)
     {
        app["screen"] = WORDPROCESSOR;
+    }
+
+    // back to the menu, where WiFi setup and Drive Mode are
+    else if (sync_state == SYNC_NOT_CONFIGURED)
+    {
+        app["menu"]["state"] = MENU_HOME;
     }
 }

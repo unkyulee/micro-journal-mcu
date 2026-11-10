@@ -57,8 +57,94 @@ bool clear_full = false;
 bool clear_request = true;
 bool cleared = true;
 
+// How hard the flashing clear (clear_full) works. One cycle is 4 black and
+// 4 white passes over the whole panel, about 0.7 seconds.
+//   F5: the writer asked for a clean screen, so the thorough clear.
+//   Entering the word processor (boot, back from menu or sleep): a lighter
+//   one. Raise CLEAR_CYCLES_ENTER to 2 if ghosts of the menu stay visible.
+#define CLEAR_CYCLES_REFRESH 2
+#define CLEAR_CYCLES_ENTER 1
+static int clear_full_cycles = CLEAR_CYCLES_REFRESH;
+
 //
 int startLine = -1;
+
+// Cursor state. Kept here so anything that wipes the screen can tell the
+// cursor code its mark is gone - otherwise it would spend a clear on erasing
+// a cursor that is no longer there, and not draw one until the next move.
+static bool cursorVisible = false;
+static int renderedCursorX = -1;
+static void WP_cursor_wiped()
+{
+    cursorVisible = false;
+    renderedCursorX = -1;
+}
+
+// Status bar state, shared between the partial updates and the full draw
+static bool status_saved_prev = false;
+static size_t status_filesize_prev = 0;
+static bool status_debouncing = false;
+static int status_last = 0;
+static void WP_status_to_framebuffer();
+
+// What each text row of the panel currently shows, as a fingerprint of the
+// line drawn there. Typing in the middle of the text can re-wrap the lines
+// below the cursor; those are only brought up to date when the cursor leaves
+// the line, and comparing against this tells whether any row is really out
+// of date - most edits don't move anything, and then no refresh is needed.
+struct RowShown
+{
+    uint32_t hash;
+    int length;
+};
+#define WP_MAX_ROWS 32
+static RowShown rows_shown[WP_MAX_ROWS];
+
+// fingerprint of the line that belongs on a visible row right now
+static RowShown WP_row_now(int row)
+{
+    Editor &editor = Editor::getInstance();
+    RowShown now = {2166136261u, 0};
+
+    // a row past the end of the text is blank, the same as an empty line
+    int line = startLine + row;
+    if (startLine < 0 || line < 0 || line > editor.totalLine || editor.linePositions[line] == NULL)
+        return now;
+
+    const char *text = editor.linePositions[line];
+    now.length = editor.lineLengths[line];
+    for (int i = 0; i < now.length; i++)
+        now.hash = (now.hash ^ (uint8_t)text[i]) * 16777619u; // FNV-1a
+
+    return now;
+}
+
+// the row was just redrawn and matches the text again
+static void WP_row_mark_shown(int row)
+{
+    if (row >= 0 && row < WP_MAX_ROWS)
+        rows_shown[row] = WP_row_now(row);
+}
+
+// the whole text area matches the text
+static void WP_rows_mark_shown()
+{
+    for (int row = 0; row < WP_MAX_ROWS; row++)
+        rows_shown[row] = WP_row_now(row);
+}
+
+// first row whose content on the panel differs from the text, -1 if none
+static int WP_rows_first_stale()
+{
+    int rows = Editor::getInstance().rows;
+    for (int row = 0; row <= rows && row < WP_MAX_ROWS; row++)
+    {
+        RowShown now = WP_row_now(row);
+        if (now.hash != rows_shown[row].hash || now.length != rows_shown[row].length)
+            return row;
+    }
+    return -1;
+}
 
 // The composing Hangul character is tracked separately from the cursor.
 // A composition can finish and immediately start again on the next jamo,
@@ -116,6 +202,7 @@ void WP_setup()
 
     // clear background
     clear_full = true;
+    clear_full_cycles = CLEAR_CYCLES_ENTER;
 
     // reset startLine
     startLine = -1;
@@ -134,9 +221,15 @@ void WP_render()
     {
         Editor::getInstance().pageChanged = false;
 
-        epd_poweron();
-        epd_clear_quick(epd_full_screen(), 4, 50);
-        epd_poweroff_all();
+        // the flashing clear below wipes the screen anyway, clearing it
+        // twice only costs time (this is the case every time the word
+        // processor opens: the file load swaps the window as well)
+        if (!clear_full)
+        {
+            epd_poweron();
+            epd_clear_quick(epd_full_screen(), 4, 50);
+            epd_poweroff_all();
+        }
 
         startLine = -1;
         clear_request = true; // status bar should be refreshed too
@@ -147,11 +240,12 @@ void WP_render()
     {
         //
         epd_poweron();
-        epd_clear();
+        epd_clear_area_cycles(epd_full_screen(), clear_full_cycles, 50);
         epd_poweroff_all();
 
         //
         clear_full = false;
+        clear_full_cycles = CLEAR_CYCLES_REFRESH;
         clear_request = true;
     }
 
@@ -259,6 +353,42 @@ static void WP_refresh_text_line(int line)
     WP_clear_row(row);
     display_setline(row);
     WP_render_text_line(line, display_y(), NULL);
+    WP_row_mark_shown(row);
+}
+
+// Clear and redraw the text area from one row down to the status bar, in a
+// single pass. Used instead of a whole screen refresh when only the lines
+// from some row on are out of date: the rows above and the status bar are
+// left alone.
+static void WP_refresh_from_row(int row)
+{
+    Editor &editor = Editor::getInstance();
+    if (row < 0)
+        row = 0;
+
+    int top = display_lineheight() * row;
+    if (top >= statusY)
+        return;
+
+    epd_poweron();
+    epd_clear_quick(display_rect(0, top, EPD_WIDTH, statusY - top), 4, 50);
+    epd_poweroff_all();
+
+    // The frame buffer is white apart from these lines, and white rows are
+    // skipped by the panel driver, so pushing the whole buffer only spends
+    // time on the rows that were just cleared.
+    for (int r = row; r <= editor.rows; r++)
+    {
+        int line = startLine + r;
+        if (line > editor.totalLine)
+            break;
+
+        WP_render_text_line(line, display_y(), display_EPD_framebuffer());
+    }
+    display_draw_buffer();
+
+    for (int r = row; r < WP_MAX_ROWS; r++)
+        WP_row_mark_shown(r);
 }
 
 // Refresh exactly the display cell occupied by the active composing Hangul
@@ -363,9 +493,13 @@ void WP_render_text()
         epd_clear_quick(epd_full_screen(), 4, 50);
         epd_poweroff_all();
 
-        //
+        // Everything is redrawn in this same round. The status bar was
+        // wiped with the rest of the screen and WP_render_status() already
+        // ran, so it is added to the frame buffer here. (Requesting another
+        // clear round for it, as before, drew the whole page a second time.)
         cleared = true;
-        clear_request = true; // status bar should be refreshed
+        WP_status_to_framebuffer();
+        WP_cursor_wiped();
 
         //
         startLine = max(cursorLine - 1, 0);
@@ -398,8 +532,10 @@ void WP_render_text()
         epd_clear_quick(epd_full_screen(), 4, 50);
         epd_poweroff_all();
 
-        //
+        // the status bar was wiped too, redraw it with the text
         cleared = true;
+        WP_status_to_framebuffer();
+        WP_cursor_wiped();
     }
 
     //
@@ -431,6 +567,10 @@ void WP_render_text()
         //
         // render frame to the display
         display_draw_buffer();
+
+        // every row is up to date again
+        editing = false;
+        WP_rows_mark_shown();
     }
 
     // The active composition ended, or feed() committed it and immediately
@@ -457,6 +597,11 @@ void WP_render_text()
         editor.charReplaced = false;
         editor.backSpacePressed = false;
         WP_refresh_composing_cell(cursorLine, composingCharStart);
+        WP_row_mark_shown(cursorLine - startLine);
+
+        // composing in the middle of the text can re-wrap the lines below
+        if (cursorPos != bufferSize)
+            editing = true;
     }
 
     // handle backspace (whole-character deletion), and the rare composing
@@ -482,6 +627,13 @@ void WP_render_text()
 
         // and redraw the line
         WP_render_text_line(cursorLine, display_y(), NULL);
+        WP_row_mark_shown(cursorLine - startLine);
+
+        // Deleting in the middle of the text can re-wrap the lines below,
+        // and joining two lines moves everything under them up. Those rows
+        // are checked and brought up to date when the cursor changes line.
+        if (cursorPos != bufferSize)
+            editing = true;
     }
 
     // Partial Refresh Logic
@@ -499,6 +651,7 @@ void WP_render_text()
 
             // and redraw the line
             WP_render_text_line(cursorLine_prev, display_y(), NULL);
+            WP_row_mark_shown(cursorLine_prev - startLine);
 
             // render the entire line
             cursorLinePos_prev = 0;
@@ -525,6 +678,7 @@ void WP_render_text()
 
             // and redraw the line
             WP_render_text_line(cursorLine, display_y(), NULL);
+            WP_row_mark_shown(currentLine);
         }
 
         ////////////////////////////////////////////////
@@ -589,21 +743,27 @@ void WP_render_text()
     {
         if (editing == true)
         {
-            // when line changes during the edit do full refresh
-
-            // clear background
-            epd_poweron();
-            epd_clear_quick(epd_full_screen(), 4, 50);
-            epd_poweroff_all();
-            clear_request = true;
+            // The cursor left a line that was edited in the middle of the
+            // text. That used to clear and redraw the whole screen every
+            // time. Now the rows are compared with what they show: when the
+            // edit didn't move any other line nothing is redrawn at all,
+            // and otherwise only the rows from the first changed one down.
+            int stale = WP_rows_first_stale();
+            if (stale >= 0)
+                WP_refresh_from_row(stale);
 
             editing = false;
-            _debug("WP_render_text::editing line change. %d %d %d %d\n", cursorLine, cursorLine_prev, cursorPos, cursorPos_prev);
+            _debug("WP_render_text::editing line change. %d %d %d %d stale row %d\n", cursorLine, cursorLine_prev, cursorPos, cursorPos_prev, stale);
         }
 
         // reset prev flag
         cursorLine_prev = cursorLine;
     }
+
+    // Outside of an edit in the middle of the text the rows are kept up to
+    // date as they change, so what is shown is the text as it is now.
+    if (!editing)
+        WP_rows_mark_shown();
 }
 
 //
@@ -651,12 +811,16 @@ void WP_render_cursor()
     JsonDocument &app = status();
 
     // don't render at the round when screen is cleared
+    // the cursor mark went with the rest of the screen, it is drawn again
+    // in the next round
     if (cleared)
+    {
+        WP_cursor_wiped();
         return;
+    }
 
     // Cursor information
-    static int renderedCursorX = -1;
-    static bool cursorVisible = false;
+    // (renderedCursorX and cursorVisible live at the top of the file)
     static int last = 0;
 
     static int cursorLineCols_prev = 0;
@@ -784,68 +948,88 @@ void WP_check_sleep()
 // FILE INDEX | BYTES | SAVED | LAYOUT
 // 160 | 200 ---- 200 | 100
 #define STATUS_REFRESH 300
+// Draw the complete status bar into the frame buffer, so it reaches the
+// panel together with the text in one pass. Used whenever the whole screen
+// was cleared. Drawing the word count and the saved state this way, instead
+// of as two separate partial updates right after, saves two clear + draw
+// cycles on every full redraw.
+static void WP_status_to_framebuffer()
+{
+    JsonDocument &app = status();
+    Editor &editor = Editor::getInstance();
+
+    // status start Y position (writeln moves the cursor, so one per item)
+    const int baseline = statusY + status_height - 8;
+    int cursorX;
+    int cursorY;
+
+    // FILE INDEX 25 - 225
+    cursorX = 25;
+    cursorY = baseline;
+    String file = format("FILE %d", app["config"]["file_index"].as<int>());
+    writeln((GFXfont *)&systemFont, file.c_str(), &cursorX, &cursorY, display_EPD_framebuffer());
+
+    // WORD COUNT 200 - 400
+    cursorX = 200;
+    cursorY = baseline;
+    String wordCountFormatted = formatNumber(editor.wordCountFile + editor.wordCountBuffer);
+    writeln((GFXfont *)&systemFont, wordCountFormatted.c_str(), &cursorX, &cursorY, display_EPD_framebuffer());
+
+    // SAVED STATE 550 - 750
+    cursorX = 550;
+    cursorY = baseline;
+    bool saved = editor.saved;
+    writeln((GFXfont *)&systemFont, saved ? "SAVED" : "NOT SAVED", &cursorX, &cursorY, display_EPD_framebuffer());
+
+    // KEYBOARD LAYOUT 860 - 960
+    String layout = app["config"]["keyboard_layout"].as<String>();
+    if (layout == "null" || layout.isEmpty())
+        layout = "US"; // defaults to US layout
+    cursorX = 860;
+    cursorY = baseline;
+    writeln((GFXfont *)&systemFont, layout.c_str(), &cursorX, &cursorY, display_EPD_framebuffer());
+
+    // the partial updates below start from what is shown now
+    status_filesize_prev = editor.seekPos + editor.getBufferSize();
+    status_debouncing = false;
+    status_saved_prev = saved;
+}
+
 void WP_render_status()
 {
-    //
-    JsonDocument &app = status();
-
     // status start Y position
     int cursorY = statusY + status_height - 8;
 
     //
-    static bool saved_prev = false;
-    static size_t filesize_prev = 0;
     size_t filesize = Editor::getInstance().seekPos + Editor::getInstance().getBufferSize();
 
     // Full Redraw
-    // Draw non-refreshing section
+    // everything goes into the frame buffer and is shown with the text
     if (cleared)
     {
-        ////////////////////////////////////////
-        // FILE INDEX 25 - 225
-        int cursorX = 25;
-        String file = format("FILE %d", app["config"]["file_index"].as<int>());
-        writeln((GFXfont *)&systemFont, file.c_str(), &cursorX, &cursorY, display_EPD_framebuffer());
-        ////////////////////////////////////////
-
-        ////////////////////////////////////////
-        // FILE SIZE
-        cursorX = 200;
-        String filesizeFormatted = formatNumber(filesize);
-        writeln((GFXfont *)&systemFont, filesizeFormatted.c_str(), &cursorX, &cursorY, display_EPD_framebuffer());
-        ////////////////////////////////////////
-
-        ////////////////////////////////////////
-        // KEYBOARD LAYOUT 860 - 960
-        String layout = app["config"]["keyboard_layout"].as<String>();
-        if (layout == "null" || layout.isEmpty())
-            layout = "US"; // defaults to US layout
-        cursorX = 860;
-        writeln((GFXfont *)&systemFont, layout.c_str(), &cursorX, &cursorY, display_EPD_framebuffer());
-        ////////////////////////////////////////
+        WP_status_to_framebuffer();
+        return;
     }
 
-    // FILE SIZE DRAWS WHEN STOPPED EDITING FOR A WHILE
-    static int last = millis();
-    static bool debouncing = false;
-    if (filesize != filesize_prev || cleared)
+    // WORD COUNT DRAWS WHEN STOPPED EDITING FOR A WHILE
+    if (filesize != status_filesize_prev)
     {
         // debounce for status_refresh amount
-        last = millis();
+        status_last = millis();
 
         //
-        filesize_prev = filesize;
-        debouncing = true;
+        status_filesize_prev = filesize;
+        status_debouncing = true;
     }
 
     //
-    if (debouncing == true && last + STATUS_REFRESH < millis())
+    if (status_debouncing == true && status_last + STATUS_REFRESH < (int)millis())
     {
         //
-        last = millis();
-        debouncing = false;
+        status_last = millis();
+        status_debouncing = false;
 
-        // FILE SIZE 200 - 400
+        // WORD COUNT 200 - 400
         int cursorX = 200;
 
         // remove previous text
@@ -859,18 +1043,20 @@ void WP_render_status()
         epd_clear_quick(area, 4, 50);
 
         // redraw the word count
-        int wordCount = Editor::getInstance().wordCountFile + Editor::getInstance().wordCountBuffer; 
+        int wordCount = Editor::getInstance().wordCountFile + Editor::getInstance().wordCountBuffer;
         String wordCountFormatted = formatNumber(wordCount);
         writeln((GFXfont *)&systemFont, wordCountFormatted.c_str(), &cursorX, &cursorY, NULL);
         epd_poweroff_all();
+
+        // writeln moved the cursor
+        cursorY = statusY + status_height - 8;
     }
 
     /////////////////////////////////////
     // DISPLAY SAVED STATE
     /////////////////////////////////////
-    if (Editor::getInstance().saved != saved_prev || cleared)
+    if (Editor::getInstance().saved != status_saved_prev)
     {
-        // CHECK HERE FOR CRASH
         int cursorX = 550;
 
         // clear the status area
@@ -897,7 +1083,7 @@ void WP_render_status()
         epd_poweroff_all();
 
         // previous values
-        saved_prev = Editor::getInstance().saved;
+        status_saved_prev = Editor::getInstance().saved;
     }
     /////////////////////////////////////
 }
