@@ -1,7 +1,7 @@
 #pragma once
 
 // app version
-#define VERSION "2.0.1"
+#define VERSION "2.0.1-1110"
 
 // default utility headers
 #include <ArduinoJson.h>
@@ -35,4 +35,7 @@ JsonDocument &status();
 // This is a pattern to hide the implementation of the file system
 // and provide a common interface to access the file system
 FileSystem *gfs();
+
+// false when the file system could not be mounted at boot
+bool gfs_ready();
 

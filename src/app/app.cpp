@@ -200,6 +200,12 @@ JsonDocument &status()
 
 // file system instance
 FileSystem *fileSystem = nullptr;
+static bool fileSystemReady = false;
+bool gfs_ready()
+{
+    return fileSystemReady;
+}
+
 FileSystem *gfs()
 {
     if (fileSystem == nullptr)
@@ -227,11 +233,24 @@ FileSystem *gfs()
         fileSystem = new FileSystemLittleFS(LITTLEFS_PARTITION);
 #endif
 
-        if (!fileSystem->begin())
+        fileSystemReady = fileSystem->begin();
+        if (!fileSystemReady)
         {
             //
             JsonDocument &app = status();
-            app["error"] = "File System Failed\n";
+            if (fileSystem->needsFormat())
+            {
+                // the error screen asks before anything is erased,
+                // see filesystem_format_confirm()
+                app["error"] = "Storage can't be read.\n\n"
+                               "Y: format storage\n"
+                               "   (erases ALL files)\n\n"
+                               "Other key: restart\n";
+            }
+            else
+            {
+                app["error"] = "File System Failed\n";
+            }
             app["screen"] = ERRORSCREEN; // ERROR SCREEN IS 0
             _log(app["error"]);
         }

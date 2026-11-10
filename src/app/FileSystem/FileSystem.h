@@ -18,5 +18,12 @@ public:
     // storage capacity in bytes, 0 when the backend can't tell
     virtual uint64_t totalBytes() { return 0; }
     virtual uint64_t usedBytes() { return 0; }
+
+    // true when begin() failed on storage that holds data it can't read.
+    // Formatting would erase it, so that is left for the user to confirm.
+    virtual bool needsFormat() { return false; }
+
+    // erase everything and mount the empty file system
+    virtual bool format() { return false; }
     virtual ~FileSystem() = default;
 };

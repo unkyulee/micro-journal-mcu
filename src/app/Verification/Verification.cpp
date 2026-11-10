@@ -38,6 +38,12 @@ bool filesystem_check()
     // Call File System for the first time to initialize
     gfs();
 
+    // gfs() already put the reason on the error screen
+    if (!gfs_ready())
+    {
+        return false;
+    }
+
 #if defined(SD_CS)
     // Check if SD card is inserted
     uint8_t cardType = SD.cardType();
@@ -75,4 +81,20 @@ bool filesystem_check()
 
     // file system check pass
     return true;
+}
+
+
+// see Verification.h
+void filesystem_format_confirm(char key)
+{
+    if (key != 'y' && key != 'Y')
+        return;
+
+    // only when the error screen is actually asking for it
+    if (!gfs()->needsFormat())
+        return;
+
+    _log("Format confirmed by the user\n");
+    if (!gfs()->format())
+        _log("Format failed\n");
 }

@@ -65,6 +65,10 @@ void Editor::loadFile(String fileName)
     //
     _log("Editor loading file [%s]\n", fileName.c_str());
 
+    // Step 0. Finish or discard a save that was interrupted, so a journal
+    // whose only copy is the working file is never taken for a new one
+    recoverTempFile(fileName);
+
     // Step 1. Create file if necessary
     if (!gfs()->exists(fileName.c_str()))
     {
@@ -255,10 +259,103 @@ static bool copyFileChunk(File &src, File &dst, size_t count)
         size_t readSize = src.read(chunk, toRead);
         if (readSize == 0)
             return false;
-        dst.write(chunk, readSize);
+
+        // a short write means the storage is full or failing
+        if (dst.write(chunk, readSize) != readSize)
+            return false;
         remaining -= readSize;
     }
     return true;
+}
+
+// Working copy a splice save is written to before it replaces the journal
+static String tempFileNameOf(const String &fileName)
+{
+    return fileName + ".tmp";
+}
+
+// Size of a file as stored, -1 when it can't be opened. Checked after every
+// save: a write can report success and still fail later, when the buffered
+// data is flushed on close.
+static long fileSizeOnDisk(const char *path)
+{
+    File file = gfs()->open(path, "r");
+    if (!file)
+        return -1;
+
+    long size = (long)file.size();
+    file.close();
+    return size;
+}
+
+// Put a completely written working copy in place of the journal.
+static bool replaceFile(const char *tempFileName, const char *fileName)
+{
+    // LittleFS replaces an existing file in one atomic step
+    if (gfs()->rename(tempFileName, fileName))
+        return true;
+
+    // FAT can't rename over an existing file. If power fails between these
+    // two steps only the working copy is left, and it is complete -
+    // recoverTempFile() puts it in place at the next load.
+    gfs()->remove(fileName);
+    return gfs()->rename(tempFileName, fileName);
+}
+
+// A save that was interrupted (power loss, crash) can leave the working
+// copy behind. Called before a file is loaded.
+static void recoverTempFile(const String &fileName)
+{
+    String tempFileName = tempFileNameOf(fileName);
+    if (!gfs()->exists(tempFileName.c_str()))
+        return;
+
+    if (gfs()->exists(fileName.c_str()))
+    {
+        // the journal is intact, the working copy never got finished
+        gfs()->remove(tempFileName.c_str());
+        _log("Removed unfinished save %s\n", tempFileName.c_str());
+        return;
+    }
+
+    // The journal is gone and only the working copy is left: it holds the
+    // whole text. Without this the load below would start an empty journal.
+    if (gfs()->rename(tempFileName.c_str(), fileName.c_str()))
+        _log("Recovered %s from %s\n", fileName.c_str(), tempFileName.c_str());
+    else
+        _log("Failed to recover %s from %s\n", fileName.c_str(), tempFileName.c_str());
+}
+
+// Tell the writer on screen that the text didn't reach the storage.
+// bytesNeeded is what the failed save tried to write.
+static void reportSaveFailed(size_t bytesNeeded)
+{
+    JsonDocument &app = status();
+
+    uint64_t total = gfs()->totalBytes();
+    uint64_t used = gfs()->usedBytes();
+    uint64_t available = total > used ? total - used : 0;
+
+    // a copy-on-write file system needs spare blocks on top of the data
+    const uint64_t margin = 128 * 1024;
+
+    if (total == 0)
+    {
+        // this storage can't tell how much room is left
+        app["error"] = "Save failed.\nStorage may be full.\nLatest text NOT saved.\n";
+    }
+    else if (available < (uint64_t)bytesNeeded + margin)
+    {
+        app["error"] = "Storage full.\nLatest text NOT saved.\nDelete files to free space.\n";
+    }
+    else
+    {
+        app["error"] = "Save failed (write error).\nLatest text NOT saved.\n";
+    }
+    app["screen"] = ERRORSCREEN;
+
+    _log("Save failed: needed %u bytes, storage total %u used %u\n",
+         (unsigned int)bytesNeeded, (unsigned int)total, (unsigned int)used);
 }
 
 bool Editor::saveFile()
@@ -347,45 +444,56 @@ bool Editor::saveFile()
         _log("Writing file at: %d\n", seekPos);
 
         // writing the file content
-        size_t length = file.print(buffer);
+        size_t length = file.write((const uint8_t *)buffer, newLength);
         _log("File written: %d bytes\n", length);
 
         file.close();
         delay(100);
 
-        fileSize = seekPos + length;
-        loadedLength = length;
+        // the window is the tail of the file, so the file must now end
+        // exactly where the window ends
+        if (length != newLength ||
+            fileSizeOnDisk(fileName.c_str()) != (long)(seekPos + newLength))
+        {
+            // the text stays in the buffer, marked unsaved
+            reportSaveFailed(newLength);
+            savingInProgress = false;
+            return false;
+        }
+
+        fileSize = seekPos + newLength;
+        loadedLength = newLength;
     }
 
     // SPLICE PATH: either the tail is shrinking, or this window sits in the
     // middle of the file and there is trailing data after it that must be
     // preserved. Rewrite the file as [prefix][new window content][suffix].
+    //
+    // The new content is written to a working copy and the journal itself
+    // is only replaced once that copy is complete and verified, so a full
+    // storage or a power loss at any point leaves the journal as it was.
     else
     {
-        String tempFileName = format("%s.tmp", fileName.c_str());
+        String tempFileName = tempFileNameOf(fileName);
         if (gfs()->exists(tempFileName.c_str()))
         {
             gfs()->remove(tempFileName.c_str());
         }
 
-        if (!gfs()->rename(fileName.c_str(), tempFileName.c_str()))
-        {
-            app["error"] = "Save failed (rename for splice)\n";
-            app["screen"] = ERRORSCREEN;
-            _log(app["error"].as<const char *>());
-            savingInProgress = false;
-            return false;
-        }
+        size_t newFileSize = fileSize - loadedLength + newLength;
 
-        File src = gfs()->open(tempFileName.c_str(), "r");
-        File dst = gfs()->open(fileName.c_str(), "w");
+        File src = gfs()->open(fileName.c_str(), "r");
+        File dst = gfs()->open(tempFileName.c_str(), "w");
         bool ok = src && dst;
 
         if (ok)
             ok = copyFileChunk(src, dst, seekPos); // prefix, unchanged
 
         if (ok)
-            dst.print(buffer); // this window's edited content
+        {
+            // this window's edited content
+            ok = dst.write((const uint8_t *)buffer, newLength) == newLength;
+        }
 
         if (ok && fileSize > windowEnd)
         {
@@ -399,24 +507,33 @@ bool Editor::saveFile()
             dst.close();
         delay(100);
 
+        // everything must have reached the storage before the journal is touched
+        if (ok)
+            ok = fileSizeOnDisk(tempFileName.c_str()) == (long)newFileSize;
+
         if (!ok)
         {
-            // Restore the original file so a transient I/O error never
-            // leaves the journal missing or half-written.
-            app["error"] = "Save failed (splice)\n";
+            // the journal was never modified, just drop the working copy
+            gfs()->remove(tempFileName.c_str());
+
+            reportSaveFailed(newFileSize);
+            savingInProgress = false;
+            return false;
+        }
+
+        if (!replaceFile(tempFileName.c_str(), fileName.c_str()))
+        {
+            // the complete text is in the journal or in the working copy,
+            // recoverTempFile() sorts it out at the next load
+            app["error"] = "Save failed (replace)\n";
             app["screen"] = ERRORSCREEN;
             _log(app["error"].as<const char *>());
-
-            gfs()->remove(fileName.c_str());
-            gfs()->rename(tempFileName.c_str(), fileName.c_str());
 
             savingInProgress = false;
             return false;
         }
 
-        gfs()->remove(tempFileName.c_str());
-
-        fileSize = fileSize + (newLength - loadedLength);
+        fileSize = newFileSize;
         loadedLength = newLength;
     }
 

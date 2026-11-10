@@ -35,7 +35,10 @@ void ErrorScreen_render()
 //
 void ErrorScreen_keyboard(char key)
 {
+    // Y formats the storage when the screen is asking for it
+    filesystem_format_confirm(key);
+
     // Any key press reset ESP32
-    _log("Restartinhg ESP32\n");
+    _log("Restarting ESP32\n");
     ESP.restart(); // Reset the ESP32
 }

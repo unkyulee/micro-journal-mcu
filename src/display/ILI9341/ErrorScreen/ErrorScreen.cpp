@@ -28,6 +28,9 @@ void ErrorScreen_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 //
 void ErrorScreen_keyboard(char key)
 {
+    // Y formats the storage when the screen is asking for it
+    filesystem_format_confirm(key);
+
     // Any key press reset ESP32
     _log("Restart ESP32\n");
     ESP.restart(); // Reset the ESP32
