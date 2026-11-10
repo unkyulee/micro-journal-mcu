@@ -84,7 +84,7 @@ int keyboard_ascii_ko(int ascii, bool pressed)
     // outside the word processor (menus, dialogs) keys must stay Latin
     // so the navigation shortcuts keep working
     JsonDocument &app = status();
-    if (app["screen"].as<int>() != WORDPROCESSOR)
+    if (appState().screen.load() != WORDPROCESSOR)
         return ascii;
 
     if (!hangul)
@@ -117,7 +117,7 @@ int keyboard_keycode_ascii_ko(uint8_t keycode, bool shift, bool alt, bool presse
     // outside the word processor (menus, dialogs) keys must stay Latin
     // so the navigation shortcuts keep working
     JsonDocument &app = status();
-    if (app["screen"].as<int>() != WORDPROCESSOR)
+    if (appState().screen.load() != WORDPROCESSOR)
         return ascii;
 
     // Hangul <-> English toggle: the dedicated toggle event, which the

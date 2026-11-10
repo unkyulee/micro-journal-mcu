@@ -1,6 +1,7 @@
 #include "Sync.h"
 #include "../Menu.h"
 #include "app/app.h"
+#include "service/Menu/MenuController.h"
 #include "display/display.h"
 #include "../Wifi/Wifi.h"
 #include <display/EPD/display_EPD.h>
@@ -41,7 +42,7 @@ void Sync_render()
         display_EPD_framebuffer());
 
     // SYNC STATE
-    int sync_state = app["sync_state"].as<int>();
+    int sync_state = appState().syncState.load();
 
     //
     if (sync_state == SYNC_START)
@@ -62,7 +63,7 @@ void Sync_render()
 
     else if (sync_state == SYNC_STARTED || sync_state == SYNC_PROGRESS)
     {
-        String message = app["sync_message"].as<String>();
+        String message = appState().syncMessage.get();
 
         if (message != "")
         {
@@ -79,7 +80,7 @@ void Sync_render()
     //
     else if (sync_state == SYNC_ERROR)
     {
-        String error = app["sync_error"].as<String>();
+        String error = appState().syncError.get();
         if (error != "")
         {
             cursorX = 30;
@@ -134,19 +135,6 @@ void Sync_render()
 //
 void Sync_keyboard(char key)
 {
-    //
-    JsonDocument &app = status();
-
-    // SYNC STATE
-    int sync_state = app["sync_state"].as<int>();
-    if (sync_state == SYNC_COMPLETED || sync_state == SYNC_ERROR)
-    {
-       app["screen"] = WORDPROCESSOR;
-    }
-
-    // back to the menu, where WiFi setup and Drive Mode are
-    else if (sync_state == SYNC_NOT_CONFIGURED)
-    {
-        app["menu"]["state"] = MENU_HOME;
-    }
+    // the rules are shared by all displays, see service/Menu/MenuController
+    menu_sync_keyboard(key);
 }

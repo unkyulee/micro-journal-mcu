@@ -20,12 +20,12 @@ class MyEspUsbHost : public EspUsbHost
     void onReceive(const usb_transfer_t *transfer)
     {
         JsonDocument &app = status();
-        app["hid_usb"] = true;
+        appState().hidUsb = true;
     }
     void onGone(const usb_host_client_event_msg_t *eventMsg)
     {
         JsonDocument &app = status();
-        app["hid_usb"] = false;
+        appState().hidUsb = false;
         _log("USB Keyboard disconnected\n");
     }
 

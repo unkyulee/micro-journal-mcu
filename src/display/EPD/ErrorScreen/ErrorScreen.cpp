@@ -15,7 +15,7 @@ void ErrorScreen_setup()
 
     // Text to be displayed
     JsonDocument &app = status();
-    String text = app["error"].as<String>();
+    String text = appState().error.get();
 
     // Draw text
     int32_t x = 18;

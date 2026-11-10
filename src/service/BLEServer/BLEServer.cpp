@@ -18,9 +18,9 @@ void BLEServer_init()
     JsonDocument &app = status();
 
     // reset task queue
-    app["ble_state"] = 0;
-    app["ble_error"] = "";
-    app["ble_message"] = "";
+    appState().bleState = 0;
+    appState().bleError = "";
+    appState().bleMessage = "";
 
     _log("[BLEServer_init]\n");
 }
@@ -34,14 +34,10 @@ void BLEServer_loop()
 
         //
         JsonDocument &app = status();
-        String task = app["task"].as<String>();
 
         // scan for the BLE devices
-        if (task == "ble_scan")
+        if (appState().takeTask(TASK_BLE_SCAN))
         {
-            //
-            app["task"] = "";
-
             //
             _log("[BLEServer_loop] Picked up BLE Device Scan Request\n");
 
@@ -49,13 +45,13 @@ void BLEServer_loop()
             BLEServer_scan();
 
             // pair automatically with a keyboard in pairing mode
-            if (app["ble_auto_pair"].as<bool>())
+            if (appState().bleAutoPair.load())
             {
                 if (!BLEServer_auto_pair())
                 {
                     // keep searching until a keyboard shows up or the
                     // pairing screen is closed
-                    app["task"] = "ble_scan";
+                    appState().requestTask(TASK_BLE_SCAN);
                 }
                 return;
             }
@@ -65,7 +61,7 @@ void BLEServer_loop()
             if (ble_devices.size() == 0)
             {
                 _log("No BLE Devices Found\n");
-                app["ble_state"] = BLE_CONFIG_NO_DEVICES;
+                appState().bleState = BLE_CONFIG_NO_DEVICES;
             }
         }
 
@@ -106,8 +102,8 @@ bool BLEServer_auto_pair()
     app["config"]["ble"]["type"] = devices[selected]["type"];
     config_save();
 
-    app["ble_auto_pair"] = false;
-    app["clear"] = true;
+    appState().bleAutoPair = false;
+    appState().clear = true;
 
     return true;
 }
@@ -119,15 +115,15 @@ void BLEServer_scan()
     //
     JsonDocument &app = status();
     //
-    app["ble_error"] = "";
-    app["ble_message"] = "Scanning BLE Devices";
+    appState().bleError = "";
+    appState().bleMessage = "Scanning BLE Devices";
     app["ble_devices"] = app["ble_devices"].to<JsonArray>();
 
     // the auto pair screen shows a fixed message, so don't redraw it on every
     // repeated scan
-    bool refresh = !app["ble_auto_pair"].as<bool>();
+    bool refresh = !appState().bleAutoPair.load();
     if (refresh)
-        app["clear"] = true;
+        appState().clear = true;
 
     // Scan BLE devices
     NimBLEScan *pScan = NimBLEDevice::getScan();
@@ -173,7 +169,7 @@ void BLEServer_scan()
     // refresh the menu screen
     _log("BLE Devices Scan Ended\n");
     if (refresh)
-        app["clear"] = true;
+        appState().clear = true;
 }
 
 // Entry Screen Initializing
@@ -202,8 +198,8 @@ void BLEServer_setup(const char *name)
     }
 
     // Request for BLE Devices Scan
-    app["task"] = "ble_scan";
-    app["ble_state"] = BLE_CONFIG_LIST;
+    appState().requestTask(TASK_BLE_SCAN);
+    appState().bleState = BLE_CONFIG_LIST;
 }
 
 //
@@ -223,8 +219,8 @@ void BLEServer_keyboard(char key)
     if (key == 'B' || key == 'b')
     {
         // stop searching for a keyboard to pair with
-        app["ble_auto_pair"] = false;
-        app["menu"]["state"] = MENU_HOME;
+        appState().bleAutoPair = false;
+        appState().menuState = MENU_HOME;
         return;
     }
 }

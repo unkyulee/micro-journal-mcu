@@ -153,7 +153,7 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
         {
             // check if this is a long press
             // then toggle to writerDeck
-            if (app["knobLongPressed"].as<bool>())
+            if (appState().knobLongPressed.load())
             {
                 // open menu
                 _debug("KeyboardScreen_keyboard - Received MENU Key\n");
@@ -162,7 +162,7 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
                 if (_keyboard_gif_loaded)
                     gif_stop(MENUSCREEN);
                 else
-                    app["screen"] = MENUSCREEN;
+                    appState().screen = MENUSCREEN;
             }
             else
             {
@@ -177,7 +177,7 @@ void KeyboardScreen_keyboard(int key, bool pressed, int index)
                 if (_keyboard_gif_loaded)
                     gif_stop(WAKEUPSCREEN);
                 else
-                    app["screen"] = WAKEUPSCREEN;
+                    appState().screen = WAKEUPSCREEN;
             }
         }
 

@@ -44,7 +44,7 @@ void Brightness_keyboard(char key, bool pressed)
         _log("Exit Brightness");
 
         //
-        app["menu"]["state"] = MENU_HOME;
+        appState().menuState = MENU_HOME;
 
         // Save Config
         config_save();

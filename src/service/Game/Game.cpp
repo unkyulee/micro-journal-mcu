@@ -402,7 +402,7 @@ static bool game_handle_key(int key)
 {
     if (key == MENU || key == 27)
     {
-        status()["screen"] = MENUSCREEN;
+        appState().screen = MENUSCREEN;
         return false;
     }
 

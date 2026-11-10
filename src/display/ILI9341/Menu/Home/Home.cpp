@@ -1,6 +1,7 @@
 #include "Home.h"
 #include "../Menu.h"
 #include "app/app.h"
+#include "service/Menu/MenuController.h"
 #include "display/display.h"
 #include "keyboard/keyboard.h"
 #ifdef REV5
@@ -18,7 +19,7 @@ void Home_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     //
     JsonDocument &app = status();
-    app["menu"]["state"] = MENU_HOME;
+    appState().menuState = MENU_HOME;
 }
 
 //
@@ -30,7 +31,7 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     String keyboard_layout = app["config"]["keyboard_layout"].as<String>();
     if (keyboard_layout == "null" || keyboard_layout.isEmpty())
         keyboard_layout = "US";
-    if (app["keyboard_custom"].as<bool>())
+    if (appState().keyboardCustom.load())
         keyboard_layout += " (Custom)";
 
     // Text to be displayed
@@ -102,109 +103,6 @@ void Home_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 //
 void Home_keyboard(char key)
 {
-    //
-    JsonDocument &app = status();
-
-    // network backup
-    if (key == 'N' || key == 'n')
-    {
-        // always listed: the backup screen explains what to set up
-        // to sync
-        app["menu"]["state"] = MENU_SYNC;
-    }
-
-    else if (key == 'D' || key == 'd')
-    {
-        // to clear file
-        app["menu"]["state"] = MENU_CLEAR;
-    }
-
-    else if (key == '\b' || key == 'B' || key == 'b')
-    {
-        // go back to the word processor
-        app["screen"] = WORDPROCESSOR;
-    }
-
-#ifdef REV5
-    else if (key == 'l' || key == 'L')
-    {
-        // move to keyboard layout
-        app["menu"]["state"] = MENU_LAYOUT;
-    }
-    else if (key == 'f' || key == 'F')
-    {
-        // move to keyboard layout
-        app["menu"]["state"] = MENU_BUTTONS;
-    }
-    else if (key == 'p' || key == 'P' || key == MENU)
-    {
-        // move to bluetooth setup
-        app["menu"]["state"] = MENU_BLUETOOTH;
-    }
-#endif
-
-    else if (key == 's' || key == 'S')
-    {
-        // act as a bluetooth keyboard to SEND text to a computer
-        app["screen"] = SENDSCREEN;
-    }
-
-    else if (key == 'w' || key == 'W')
-    {
-        // move to keyboard layout
-        app["menu"]["state"] = MENU_WIFI;
-    }
-
-    else if (key == 'e' || key == 'E')
-    {
-        // edit files from a browser over wifi
-        app["menu"]["state"] = MENU_WEB;
-    }
-
-#ifdef REV6
-    else if (key == 'k' || key == 'K')
-    {
-        // move to keyboard layout
-        app["screen"] = KEYBOARDSCREEN;
-    }
-    else if (key == 'l' || key == 'L')
-    {
-        // move to input language selection (Latin / Hangul)
-        app["menu"]["state"] = MENU_LANGUAGE;
-    }
-#endif
-
-    else if (key == 't' || key == 'T')
-    {
-        // typing game
-        app["screen"] = GAMESCREEN;
-    }
-
-    else if (key == 'g' || key == 'G')
-    {
-        // move to keyboard layout
-        app["menu"]["state"] = MENU_BACKGROUND;
-    }
-
-    else if (key == 'c' || key == 'C')
-    {
-        // move to keyboard layout
-        app["menu"]["state"] = MENU_FONTCOLOR;
-    }
-
-    // chose file
-    if (key > 47 && key < 58)
-    {
-        // save config
-        int file_index = key - 48;
-        app["config"]["file_index"] = file_index;
-        config_save();
-
-        // load editor
-        Editor::getInstance().loadFile(format("/%d.txt", file_index));
-
-        //
-        // go back to the word processor
-        app["screen"] = WORDPROCESSOR;
-    }
+    // the rules are shared by all displays, see service/Menu/MenuController
+    menu_home_keyboard(key);
 }

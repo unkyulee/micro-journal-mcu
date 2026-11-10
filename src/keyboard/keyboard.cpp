@@ -25,12 +25,6 @@
 #include "keyboard/Keypad/48/keypad_48.h"
 #endif
 
-#ifdef CARDPUTER
-#include "keyboard/CardPuter/keypad_CardPuter.h"
-#include "keyboard/USBHost/USBHost.h"
-#include "keyboard/BLE/ble.h"
-#endif
-
 #ifdef REV5
 #include "keyboard/USBHost/USBHost.h"
 #include "keyboard/Button/button.h"
@@ -98,15 +92,6 @@ void keyboard_setup()
   keyboard_keypad_48_setup();
 #endif
 
-#ifdef CARDPUTER
-  keypad_cardputer_setup();
-
-  // setup USB Host
-  USBHost_setup();
-
-  // setup BLE Keyboard
-  ble_setup("MJ CARDPUTER");
-#endif
 }
 
 //
@@ -118,16 +103,6 @@ void keyboard_loop()
 
 #ifdef REV6
   keyboard_keypad_48_loop();
-#endif
-
-#ifdef CARDPUTER
-  keypad_cardputer_loop();
-
-  // setup USB Host
-  USBHost_loop();
-
-  // setup BLE Keyboard
-  ble_loop();
 #endif
 
 #ifdef REV5
@@ -190,7 +165,6 @@ void keyboard_config_load(
     //
     String fileString = file.readString();
     file.close();
-    delay(100);
 
     //
     _debug(fileString.c_str());
@@ -205,12 +179,12 @@ void keyboard_config_load(
     if (error)
     {
       //
-      app["error"] = format("%s not in a correct json form: %s\n", filename.c_str(), error.c_str());
-      // app["screen"] = ERRORSCREEN;
+      appState().error = format("%s not in a correct json form: %s\n", filename.c_str(), error.c_str());
+      // appState().screen = ERRORSCREEN;
       // app["screen_next"] = KEYBOARDSCREEN;
 
       //
-      _log(app["error"]);
+      _log("%s", appState().error.get().c_str());
 
       return;
     }
@@ -502,8 +476,8 @@ void keyboard_HID2Ascii(uint8_t keycode, uint8_t modifier, bool pressed)
   bool alt = (modifier & (1UL << (2))) || (modifier & (1UL << (6)));
 
   // Translate the Keycode to ASCII
-  JsonDocument &app = status();
-  String locale = app["config"]["keyboard_layout"].as<String>();
+  // the layout is read from the cached copy: this runs for every key
+  String locale = appState().keyboardLayout.get();
   int ascii = keyboard_keycode_ascii(locale, keycode, shift, alt, pressed);
   if (ascii != 0)
     // send key to GUI

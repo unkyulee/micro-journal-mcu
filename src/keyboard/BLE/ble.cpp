@@ -90,8 +90,8 @@ void ble_loop()
             if (ble_attached)
             {
                 ble_attached = false;
-                app["ble_connected"] = false;
-                app["clear"] = true; // refresh the pairing screen status
+                appState().bleConnected = false;
+                appState().clear = true; // refresh the pairing screen status
                 _log("[ble_loop] BLE keyboard disconnected\n");
             }
 
@@ -455,8 +455,8 @@ static bool ble_attach()
     }
 
     ble_attached = true;
-    app["ble_connected"] = true;
-    app["clear"] = true; // refresh the pairing screen status
+    appState().bleConnected = true;
+    appState().clear = true; // refresh the pairing screen status
     _log("[ble_attach] BLE keyboard ready\n");
 
     return true;

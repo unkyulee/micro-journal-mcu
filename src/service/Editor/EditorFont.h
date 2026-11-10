@@ -10,7 +10,7 @@
 // columns a character occupies) is hard coded in either place.
 //
 // fontData is opaque on purpose: each display backend uses a different font
-// system (u8g2 fonts on RLCD/ILI9341/ST7735, M5GFX fonts on CARDPUTER,
+// system (u8g2 fonts on RLCD/ILI9341/ST7735,
 // GFXfont on EPD) and only the backend that registered the font ever
 // interprets the pointer.
 //

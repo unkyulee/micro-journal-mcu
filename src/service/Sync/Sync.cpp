@@ -36,13 +36,13 @@ void sync_init()
     // reset the sync state
     // update app sync state
     JsonDocument &app = status();
-    app["sync_state"] = SYNC_START;
-    app["sync_error"] = "";
-    app["sync_message"] = "";
+    appState().syncState = SYNC_START;
+    appState().syncError = "";
+    appState().syncMessage = "";
 
     // nothing to start yet, the screen explains what is missing
     if (!sync_wifi_configured() || !sync_url_configured())
-        app["sync_state"] = SYNC_NOT_CONFIGURED;
+        appState().syncState = SYNC_NOT_CONFIGURED;
 
     // Earlier versions uploaded from a temporary encoded copy of the
     // journal and could leave it behind. Remove it here, while WiFi is
@@ -51,7 +51,7 @@ void sync_init()
     if (!Editor::getInstance().fileName.isEmpty() && gfs()->exists(leftover.c_str()))
         gfs()->remove(leftover.c_str());
 
-    _log("[sync_init] sync_init state %d\n", app["sync_state"].as<int>());
+    _log("[sync_init] sync_init state %d\n", appState().syncState.load());
 }
 
 //
@@ -94,14 +94,9 @@ int sync_setup_lines(String *lines, int max)
 // request background service to pick up the request
 void sync_start_request()
 {
-    JsonDocument &app = status();
-    String task = app["task"].as<String>();
-    //
-    if (task != "sync_start")
-    {
-        app["task"] = "sync_start";
-        _log("[sync_start_request] Sync Start Requested\n");
-    }
+    // asked on every redraw while the screen waits for the backup to begin,
+    // the request is simply set again
+    appState().requestTask(TASK_SYNC_START);
 }
 
 //
@@ -114,13 +109,8 @@ void sync_loop()
 
         //
         JsonDocument &app = status();
-        String task = app["task"].as<String>();
-
-        if (task == "sync_start")
+        if (appState().takeTask(TASK_SYNC_START))
         {
-            //
-            app["task"] = "";
-
             //
             _log("[sync_loop] Picked up Sync Start Request\n");
 
@@ -141,9 +131,13 @@ void sync_start()
     _log("[sync_start] Sync Start\n");
 
     //
-    app["sync_state"] = SYNC_STARTED;
-    app["sync_message"] = "Connecting to WiFi";
-    app["clear"] = true;
+    appState().syncState = SYNC_STARTED;
+
+    // a redraw may have asked again between the request being picked up
+    // and the state changing just now - this run is the one it asked for
+    appState().cancelTask(TASK_SYNC_START);
+    appState().syncMessage = "Connecting to WiFi";
+    appState().clear = true;
 
     // full CPU speed while WiFi is in use
     setCpuFrequencyMhz(CPU_FREQUENCY_FULL);
@@ -157,8 +151,8 @@ void sync_start()
 
     //
     int networksFound = WiFi.scanNetworks();
-    app["sync_message"] = format("Found %d networks", networksFound);
-    app["clear"] = true;
+    appState().syncMessage = format("Found %d networks", networksFound);
+    appState().clear = true;
 
     // reset the network.access_points array
     JsonArray access_points = app["network"]["access_points"].to<JsonArray>();
@@ -209,9 +203,9 @@ void sync_start()
                     _log("Connected to a matching WiFi network!\n");
 
                     //
-                    app["sync_message"] = format("Connected to: %s\n", savedSsid);
-                    app["clear"] = true;
-                    _log(app["sync_message"]);
+                    appState().syncMessage = format("Connected to: %s\n", savedSsid);
+                    appState().clear = true;
+                    _log("%s", appState().syncMessage.get().c_str());
                     delay(1000); // give some delay for the connection to settle
 
                     // Sync File Start
@@ -228,9 +222,9 @@ void sync_start()
     sync_stop();
 
     //
-    app["sync_error"] = "NOT ABLE TO CONNECT TO WIFI";
-    app["sync_state"] = SYNC_ERROR;
-    app["clear"] = true;
+    appState().syncError = "NOT ABLE TO CONNECT TO WIFI";
+    appState().syncState = SYNC_ERROR;
+    appState().clear = true;
     //
 }
 
@@ -253,8 +247,8 @@ bool sync_connect_wifi(JsonDocument &app, const char *ssid, const char *password
 
     //
     String message = format("trying to connect to %s ", ssid);
-    app["sync_message"] = message;
-    app["clear"] = true;
+    appState().syncMessage = message;
+    appState().clear = true;
     _log(message.c_str());
 
     //
@@ -266,8 +260,8 @@ bool sync_connect_wifi(JsonDocument &app, const char *ssid, const char *password
     {
         delay(100);
         message += ".";
-        app["sync_message"] = message;
-        app["clear"] = true;
+        appState().syncMessage = message;
+        appState().clear = true;
         attempt++;
     }
 
@@ -281,8 +275,8 @@ bool sync_connect_wifi(JsonDocument &app, const char *ssid, const char *password
         app["network"]["status"] = 1;
 
         // print info
-        app["sync_message"] = format("Connected - %s, %s\n", ssid, WiFi.localIP().toString().c_str());
-        app["clear"] = true;
+        appState().syncMessage = format("Connected - %s, %s\n", ssid, WiFi.localIP().toString().c_str());
+        appState().clear = true;
 
         return true;
     }
@@ -291,9 +285,9 @@ bool sync_connect_wifi(JsonDocument &app, const char *ssid, const char *password
         _log("Failed to connect to WiFi. Please check your credentials.\n");
 
         //
-        app["sync_error"] = format("Failed to connect to %s", ssid);
-        app["sync_state"] = SYNC_ERROR;
-        app["clear"] = true;
+        appState().syncError = format("Failed to connect to %s", ssid);
+        appState().syncState = SYNC_ERROR;
+        appState().clear = true;
 
         // drop the association only
         // sync_start still retries the remaining saved networks
@@ -486,11 +480,11 @@ void sync_send()
     {
         sync_stop();
 
-        app["sync_error"] = "BACKUP URL NOT FOUND\n";
-        app["sync_state"] = SYNC_ERROR;
-        app["clear"] = true;
+        appState().syncError = "BACKUP URL NOT FOUND\n";
+        appState().syncState = SYNC_ERROR;
+        appState().clear = true;
 
-        _log(app["sync_error"].as<const char *>());
+        _log("%s", appState().syncError.get().c_str());
         return;
     }
 
@@ -500,11 +494,11 @@ void sync_send()
     {
         sync_stop();
 
-        app["sync_error"] = "Error opening input file!\n";
-        app["sync_state"] = SYNC_ERROR;
-        app["clear"] = true;
+        appState().syncError = "Error opening input file!\n";
+        appState().syncState = SYNC_ERROR;
+        appState().clear = true;
 
-        _log(app["sync_error"].as<const char *>());
+        _log("%s", appState().syncError.get().c_str());
         return;
     }
 
@@ -514,17 +508,17 @@ void sync_send()
         inputFile.close();
         sync_stop();
 
-        app["sync_error"] = "File is empty. Nothing to back up.\n";
-        app["sync_state"] = SYNC_ERROR;
-        app["clear"] = true;
+        appState().syncError = "File is empty. Nothing to back up.\n";
+        appState().syncState = SYNC_ERROR;
+        appState().clear = true;
 
-        _log(app["sync_error"].as<const char *>());
+        _log("%s", appState().syncError.get().c_str());
         return;
     }
 
     //
-    app["sync_message"] = "Sending file to drive ... ";
-    app["clear"] = true;
+    appState().syncMessage = "Sending file to drive ... ";
+    appState().clear = true;
 
     _log("Requesting backup ... \n");
     _log("%s\n", url.c_str());
@@ -580,15 +574,15 @@ void sync_send()
 
     if (error.isEmpty())
     {
-        app["sync_state"] = SYNC_COMPLETED;
-        app["clear"] = true;
+        appState().syncState = SYNC_COMPLETED;
+        appState().clear = true;
         _log("Backup State: SYNC_COMPLETED\n");
     }
     else
     {
-        app["sync_error"] = error;
-        app["sync_state"] = SYNC_ERROR;
-        app["clear"] = true;
+        appState().syncError = error;
+        appState().syncState = SYNC_ERROR;
+        appState().clear = true;
 
         _log("Backup State: SYNC_ERROR %s\n", error.c_str());
     }

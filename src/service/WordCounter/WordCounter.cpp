@@ -10,7 +10,7 @@ void wordcounter_service()
     JsonDocument &app = status();
 
     // only relevant while the document is actually on screen
-    if (app["screen"].as<int>() != WORDPROCESSOR)
+    if (appState().screen.load() != WORDPROCESSOR)
     {
         return;
     }
@@ -35,12 +35,20 @@ void wordcounter_service()
             // typing, so writing it to flash here would stall every
             // keystroke burst. Editor::saveFile() persists it to config.json
             // whenever the file itself is actually flushed.
-            Editor::getInstance().wordCountBuffer = wordcounter_buffer(Editor::getInstance().buffer);
+            // this runs on the background core: hold the editor lock so the
+            // buffer isn't edited while it is being counted
+            int wordCountBuffer;
+            {
+                Editor &editor = Editor::getInstance();
+                EditorLock lock(editor.mutex);
+                wordCountBuffer = wordcounter_buffer(editor.buffer);
+                editor.wordCountBuffer = wordCountBuffer;
+            }
 
             // keep the in-memory config field current so any save that
             // happens for any reason carries the latest number
             int file_index = app["config"]["file_index"].as<int>();
-            app["config"][format("wordcount_buffer_%d", file_index)] = Editor::getInstance().wordCountBuffer;
+            app["config"][format("wordcount_buffer_%d", file_index)] = wordCountBuffer;
         }
     }
 }
@@ -73,11 +81,11 @@ int wordcounter_file(const char *filename)
     if (!file)
     {
         //
-        app["error"] = format("file open failed %s\n", filename);
-        app["screen"] = ERRORSCREEN;
+        appState().error = format("file open failed %s\n", filename);
+        appState().screen = ERRORSCREEN;
 
         //
-        _debug(app["error"]);
+        _debug("%s", appState().error.get().c_str());
 
         return 0;
     }

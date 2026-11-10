@@ -24,7 +24,7 @@ void handleTapMenu(Button2 &b)
 void handleTapBack(Button2 &b)
 {
     JsonDocument &app = status();
-    int screen = app["screen"].as<int>();
+    int screen = appState().screen.load();
 
     if (screen == MENUSCREEN)
     {
@@ -42,7 +42,7 @@ void handleTapBack(Button2 &b)
     {
         // go to sleep
         _log("Go to sleep\n");
-        app["screen"] = SLEEPSCREEN;
+        appState().screen = SLEEPSCREEN;
     }
 }
 

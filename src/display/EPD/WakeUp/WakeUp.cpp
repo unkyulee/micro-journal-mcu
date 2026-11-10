@@ -9,7 +9,7 @@ void WakeUp_setup()
 
     // move to word processor
     JsonDocument &app = status();
-    app["screen"] = WORDPROCESSOR;
+    appState().screen = WORDPROCESSOR;
 }
 
 //

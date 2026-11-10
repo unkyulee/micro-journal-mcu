@@ -67,8 +67,8 @@ void Language_keyboard(char key)
         app["config"]["font"] = 0;
         config_save();
 
-        app["screen"] = WORDPROCESSOR;
-        app["menu"]["state"] = MENU_HOME;
+        appState().screen = WORDPROCESSOR;
+        appState().menuState = MENU_HOME;
     }
 
     // US International (dead keys: ' ` " ^ ~ compose accented latin)
@@ -78,8 +78,8 @@ void Language_keyboard(char key)
         app["config"]["font"] = 0;
         config_save();
 
-        app["screen"] = WORDPROCESSOR;
-        app["menu"]["state"] = MENU_HOME;
+        appState().screen = WORDPROCESSOR;
+        appState().menuState = MENU_HOME;
     }
 
     // Hangul
@@ -89,13 +89,13 @@ void Language_keyboard(char key)
         app["config"]["font"] = 2;
         config_save();
 
-        app["screen"] = WORDPROCESSOR;
-        app["menu"]["state"] = MENU_HOME;
+        appState().screen = WORDPROCESSOR;
+        appState().menuState = MENU_HOME;
     }
 
     // back to home menu
     else if (key == 'b' || key == '\b' || key == 27)
     {
-        app["menu"]["state"] = MENU_HOME;
+        appState().menuState = MENU_HOME;
     }
 }

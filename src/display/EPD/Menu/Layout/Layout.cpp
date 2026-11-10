@@ -92,6 +92,6 @@ void Layout_keyboard(char key)
     config_save();
 
     //
-    app["screen"] = WORDPROCESSOR;
-    app["menu"]["state"] = MENU_HOME;
+    appState().screen = WORDPROCESSOR;
+    appState().menuState = MENU_HOME;
 }

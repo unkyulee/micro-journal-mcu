@@ -4,12 +4,13 @@
 //
 #include "app/app.h"
 #include "service/Editor/Editor.h"
+#include "service/Editor/EditorTimers.h"
 #include "keyboard/keyboard.h"
 #include "display/display.h"
 
 // Generated Korean font - see script/generate_gfxfont_korean_font.py.
 // GFXfont/4-bit-grayscale format (this backend's own, different from the
-// u8g2 fonts used by RLCD/ILI9341/ST7735/CARDPUTER). Source is the same
+// u8g2 fonts used by RLCD/ILI9341/ST7735). Source is the same
 // GalmuriMono11 (SIL OFL) used for Rev.8, rasterized larger (36px) for
 // this panel's bigger 960x540 canvas; only included here, so its ~1.3MB
 // of glyph data isn't duplicated into every other EPD screen's translation
@@ -17,7 +18,6 @@
 #include "../fonts/galmuri_36_korean.h"
 
 //
-int last_sleep = millis();
 //
 #define MARGIN_X 20
 #define MARGIN_Y 40
@@ -103,7 +103,7 @@ static RowShown rows_shown[WP_MAX_ROWS];
 // fingerprint of the line that belongs on a visible row right now
 static RowShown WP_row_now(int row)
 {
-    Editor &editor = Editor::getInstance();
+    Editor &editor = Editor::view();
     RowShown now = {2166136261u, 0};
 
     // a row past the end of the text is blank, the same as an empty line
@@ -136,7 +136,7 @@ static void WP_rows_mark_shown()
 // first row whose content on the panel differs from the text, -1 if none
 static int WP_rows_first_stale()
 {
-    int rows = Editor::getInstance().rows;
+    int rows = Editor::view().rows;
     for (int row = 0; row <= rows && row < WP_MAX_ROWS; row++)
     {
         RowShown now = WP_row_now(row);
@@ -204,6 +204,9 @@ void WP_setup()
     clear_full = true;
     clear_full_cycles = CLEAR_CYCLES_ENTER;
 
+    // autosave and sleep timers start over
+    editor_timers_reset();
+
     // reset startLine
     startLine = -1;
 
@@ -215,11 +218,16 @@ void WP_setup()
 //
 void WP_render()
 {
+    // Take this round's copy of the editor. Everything drawn below reads
+    // Editor::view(), so the text can't change half way through a redraw
+    // while keys keep arriving on the other core.
+    Editor::getInstance().snapshot();
+
     // the editor swapped to a different window of the file (paging, or the
     // buffer filling up while typing) - force a full redraw
-    if (Editor::getInstance().pageChanged)
+    if (Editor::view().pageChanged)
     {
-        Editor::getInstance().pageChanged = false;
+        Editor::view().pageChanged = false;
 
         // the flashing clear below wipes the screen anyway, clearing it
         // twice only costs time (this is the case every time the word
@@ -264,8 +272,8 @@ void WP_render()
     }
 
     //
-    WP_check_saved();
-    WP_check_sleep();
+    editor_autosave(4000);
+    editor_sleep_check(10 * 60 * 1000);
 
     // Bottom Status
     WP_render_status();
@@ -286,8 +294,8 @@ void WP_render()
 // DRAW LINE OF TEXT
 void WP_render_text_line(int i, int cursorY, uint8_t *framebuffer)
 {
-    char *line = Editor::getInstance().linePositions[i];
-    int length = Editor::getInstance().lineLengths[i];
+    char *line = Editor::view().linePositions[i];
+    int length = Editor::view().lineLengths[i];
 
     //
     display_setline(i - startLine);
@@ -347,7 +355,7 @@ void WP_clear_row(int row)
 static void WP_refresh_text_line(int line)
 {
     int row = line - startLine;
-    if (row < 0 || row > Editor::getInstance().rows)
+    if (row < 0 || row > Editor::view().rows)
         return;
 
     WP_clear_row(row);
@@ -362,7 +370,7 @@ static void WP_refresh_text_line(int line)
 // left alone.
 static void WP_refresh_from_row(int row)
 {
-    Editor &editor = Editor::getInstance();
+    Editor &editor = Editor::view();
     if (row < 0)
         row = 0;
 
@@ -396,7 +404,7 @@ static void WP_refresh_from_row(int row)
 // rectangle follows charColumns() rather than assuming a fixed byte/width.
 static void WP_refresh_composing_cell(int line, int charStart)
 {
-    Editor &editor = Editor::getInstance();
+    Editor &editor = Editor::view();
     int row = line - startLine;
     if (row < 0 || row > editor.rows || line < 0 || line > editor.totalLine)
         return;
@@ -459,12 +467,12 @@ void WP_render_text()
     static int cursorLine_prev = 0;
     static int cursorLinePos_prev = 0;
     static int bufferSize_prev = 0;
-    int cursorPos = Editor::getInstance().cursorPos;
-    int cursorLine = Editor::getInstance().cursorLine;
-    int cursorLinePos = Editor::getInstance().cursorLinePos;
-    int bufferSize = Editor::getInstance().getBufferSize();
+    int cursorPos = Editor::view().cursorPos;
+    int cursorLine = Editor::view().cursorLine;
+    int cursorLinePos = Editor::view().cursorLinePos;
+    int bufferSize = Editor::view().getBufferSize();
 
-    Editor &editor = Editor::getInstance();
+    Editor &editor = Editor::view();
     bool composing = editor.composer.isComposing();
     int composingCharStart = composing ? editor.prevCharStart(cursorPos) : -1;
     bool compositionCommitted =
@@ -473,8 +481,8 @@ void WP_render_text()
          composingCharStart != composing_char_start_prev);
 
     //
-    int totalLine = Editor::getInstance().totalLine;
-    int rows = Editor::getInstance().rows;
+    int totalLine = Editor::view().totalLine;
+    int rows = Editor::view().rows;
 
     // when first turned on
     // start editing from last 2nd Line
@@ -607,11 +615,11 @@ void WP_render_text()
     // handle backspace (whole-character deletion), and the rare composing
     // replace that crossed a line boundary - the row is cleared and
     // redrawn whole
-    else if (Editor::getInstance().backSpacePressed || Editor::getInstance().charReplaced)
+    else if (Editor::view().backSpacePressed || Editor::view().charReplaced)
     {
         //
-        Editor::getInstance().backSpacePressed = false;
-        Editor::getInstance().charReplaced = false;
+        Editor::view().backSpacePressed = false;
+        Editor::view().charReplaced = false;
 
         // clear the currentLine and the previousLine
         _debug("WP_render_text::Handle Backspace\n");
@@ -687,8 +695,8 @@ void WP_render_text()
         // Draw the new character entered
         else if (cursorPos != cursorPos_prev)
         {
-            char *line = Editor::getInstance().linePositions[cursorLine];
-            int line_length = Editor::getInstance().lineLengths[cursorLine];
+            char *line = Editor::view().linePositions[cursorLine];
+            int line_length = Editor::view().lineLengths[cursorLine];
 
             // pixel offset of the byte at cursorLinePos_prev: count the
             // display columns of the UTF-8 characters before it, since a
@@ -698,7 +706,7 @@ void WP_render_text()
             {
                 int charLen;
                 uint32_t codepoint = utf8_decode(line + j, &charLen);
-                prefixCols += Editor::getInstance().charColumns(codepoint);
+                prefixCols += Editor::view().charColumns(codepoint);
                 j += charLen;
             }
 
@@ -825,10 +833,10 @@ void WP_render_cursor()
 
     static int cursorLineCols_prev = 0;
     static int cursorPos_prev = 0;
-    int cursorLinePos = Editor::getInstance().cursorLinePos;
-    int cursorLineCols = Editor::getInstance().cursorLineCols;
-    int cursorLine = Editor::getInstance().cursorLine;
-    int cursorPos = Editor::getInstance().cursorPos;
+    int cursorLinePos = Editor::view().cursorLinePos;
+    int cursorLineCols = Editor::view().cursorLineCols;
+    int cursorLine = Editor::view().cursorLine;
+    int cursorPos = Editor::view().cursorPos;
 
     static Rect_t area;
 
@@ -840,7 +848,7 @@ void WP_render_cursor()
     // cursor offset is measured in display columns so it stays correct
     // once double-width glyphs exist
     int cursorX = MARGIN_X;
-    if (Editor::getInstance().buffer[max(cursorPos - 1, 0)] != '\n' && cursorLinePos != 0)
+    if (Editor::view().buffer[max(cursorPos - 1, 0)] != '\n' && cursorLinePos != 0)
     {
         // where to display the cursor
         cursorX = MARGIN_X + cursorLineCols * display_fontwidth() + 5;
@@ -894,53 +902,6 @@ void WP_render_cursor()
     // appears after a short pause and stays solid until it moves.
 }
 
-// Check if text is saved
-void WP_check_saved()
-{
-    //
-    static unsigned int last = millis();
-    static int lastBufferSize = Editor::getInstance().getBufferSize();
-    int bufferSize = Editor::getInstance().getBufferSize();
-
-    //
-    // when the file is saved then extend the autosave timer
-    if (lastBufferSize != bufferSize)
-    {
-        last = millis();
-
-        //
-        lastBufferSize = bufferSize;
-    }
-
-    //
-    // when idle for 4 seconds then auto save
-    if (millis() - last > 4000)
-    {
-        //
-        last = millis();
-
-        if (!Editor::getInstance().saved)
-        {
-            _log("saving file due in inactivity %d.txt\n", status()["config"]["file_index"].as<int>());
-            Editor::getInstance().saveFile();
-        }
-    }
-}
-
-void WP_check_sleep()
-{
-    // 600 seconds - 10 minutes
-    if (millis() - last_sleep > 10 * 60 * 1000)
-    {
-        // if no action for 10 minute go to sleep
-        last_sleep = millis();
-
-        //
-        JsonDocument &app = status();
-        app["screen"] = SLEEPSCREEN;
-    }
-}
-
 // display file number
 // display character total
 // display keyboard layout - Rev.5 and Rev.7
@@ -956,7 +917,7 @@ void WP_check_sleep()
 static void WP_status_to_framebuffer()
 {
     JsonDocument &app = status();
-    Editor &editor = Editor::getInstance();
+    Editor &editor = Editor::view();
 
     // status start Y position (writeln moves the cursor, so one per item)
     const int baseline = statusY + status_height - 8;
@@ -1001,7 +962,7 @@ void WP_render_status()
     int cursorY = statusY + status_height - 8;
 
     //
-    size_t filesize = Editor::getInstance().seekPos + Editor::getInstance().getBufferSize();
+    size_t filesize = Editor::view().seekPos + Editor::view().getBufferSize();
 
     // Full Redraw
     // everything goes into the frame buffer and is shown with the text
@@ -1043,7 +1004,7 @@ void WP_render_status()
         epd_clear_quick(area, 4, 50);
 
         // redraw the word count
-        int wordCount = Editor::getInstance().wordCountFile + Editor::getInstance().wordCountBuffer;
+        int wordCount = Editor::view().wordCountFile + Editor::view().wordCountBuffer;
         String wordCountFormatted = formatNumber(wordCount);
         writeln((GFXfont *)&systemFont, wordCountFormatted.c_str(), &cursorX, &cursorY, NULL);
         epd_poweroff_all();
@@ -1055,7 +1016,7 @@ void WP_render_status()
     /////////////////////////////////////
     // DISPLAY SAVED STATE
     /////////////////////////////////////
-    if (Editor::getInstance().saved != status_saved_prev)
+    if (Editor::view().saved != status_saved_prev)
     {
         int cursorX = 550;
 
@@ -1072,7 +1033,7 @@ void WP_render_status()
 
         //
         String savedText = "NOT SAVED";
-        if (Editor::getInstance().saved)
+        if (Editor::view().saved)
         {
             // file is saved
             savedText = "SAVED";
@@ -1083,7 +1044,7 @@ void WP_render_status()
         epd_poweroff_all();
 
         // previous values
-        status_saved_prev = Editor::getInstance().saved;
+        status_saved_prev = Editor::view().saved;
     }
     /////////////////////////////////////
 }
@@ -1092,7 +1053,7 @@ void WP_render_status()
 void WP_keyboard(int key, bool pressed, int index)
 {
     // Every key stroke resets sleep timer
-    last_sleep = millis();
+    editor_activity();
 
     //
     JsonDocument &app = status();
@@ -1107,7 +1068,7 @@ void WP_keyboard(int key, bool pressed, int index)
             Editor::getInstance().saveFile();
 
             //
-            app["screen"] = MENUSCREEN;
+            appState().screen = MENUSCREEN;
 
             //
             _debug("WP_keyboard::Moving to Menu Screen\n");
@@ -1131,7 +1092,7 @@ void WP_keyboard(int key, bool pressed, int index)
         if (!pressed)
         {
             // go to sleep mode
-            app["screen"] = SLEEPSCREEN;
+            appState().screen = SLEEPSCREEN;
         }
     }
 

@@ -11,14 +11,23 @@ void _set_default_config()
     _log("Creating default config.json template\n");
     
     // create a default config
-    app["task"] = "";
-
-    //
     app["config"]["sync"]["url"] = "";
     app["config"]["ble"]["remote"] = "";
 
     //
     config_save();
+}
+
+// see Config.h
+void config_cache_refresh()
+{
+    JsonDocument &app = status();
+
+    // an empty layout means the default (US)
+    appState().keyboardLayout = String(app["config"]["keyboard_layout"] | "");
+
+    // a bluetooth keyboard is paired
+    appState().bleConfigured = app["config"]["ble"]["address"].is<const char *>();
 }
 
 //
@@ -38,7 +47,6 @@ bool config_load()
         // read the file
         String configString = configFile.readString();
         configFile.close();
-        delay(100); // safe to wait for a few seconds after closing a file
 
         // check if configString is empty
         if (configString.length() == 0)
@@ -61,22 +69,36 @@ bool config_load()
         // convert to JsonObject
         DeserializationError error = deserializeJson(configDoc, configString);
         _log("Deserializing config.json file\n");
-        if (error)
+        if (error || !configDoc.is<JsonObject>())
         {
             //
-            _log("config.json deserializeJson() failed: %s\n", error.c_str());
+            _log("config.json is not valid JSON: %s\n", error.c_str());
 
-            //
-            app["error"] = "Wrong format config.json";
-            app["screen"] = ERRORSCREEN; // ERROR SCREEN IS 0
+            // A broken config.json used to stop the boot at an error
+            // screen, with no way to repair the file from the device
+            // itself. Keep the broken file as config.bad so nothing the
+            // user wrote is lost (it can be fixed and renamed back in
+            // Drive Mode), start from default settings and carry on.
+            if (gfs()->exists("/config.bad"))
+                gfs()->remove("/config.bad");
 
-            return false;
+            if (gfs()->rename("/config.json", "/config.bad"))
+                _log("Broken config.json kept as config.bad\n");
+            else
+                _log("Failed to keep the broken config.json as config.bad\n");
+
+            // writes a fresh config.json
+            _set_default_config();
+
+            return true;
         }
 
         // Assign the loaded configuration to "config" property of app
         _log("Loading app status config\n");
         app["config"] = configDoc.as<JsonObject>();        
         _log("Config loaded successfully!\n");
+
+        config_cache_refresh();
     }
     else
     {
@@ -93,6 +115,9 @@ bool config_load()
 //
 void config_save()
 {
+    // the document just changed, bring the cached copies along
+    config_cache_refresh();
+
     // load app status
     JsonDocument &app = status();
 
@@ -102,10 +127,10 @@ void config_save()
     if (!configFile)
     {
         //
-        app["error"] = "Failed to open config.json file for writing.\n";
-        app["screen"] = ERRORSCREEN; // ERROR SCREEN IS 0
+        appState().error = "Failed to open config.json file for writing.\n";
+        appState().screen = ERRORSCREEN; // ERROR SCREEN IS 0
 
-        _log(app["error"]);
+        _log("%s", appState().error.get().c_str());
 
         return;
     }
@@ -126,13 +151,12 @@ void config_save()
     else
     {
         //
-        app["error"] = "No 'config' property found in app Document.\n";
-        app["screen"] = 0; // ERROR SCREEN IS 0
+        appState().error = "No 'config' property found in app Document.\n";
+        appState().screen = ERRORSCREEN;
 
-        _log(app["error"]);
+        _log("%s", appState().error.get().c_str());
     }
 
     // close config.json
     configFile.close();
-    delay(100);
 }

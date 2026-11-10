@@ -19,7 +19,7 @@ bool firmware_check()
     if (gfs()->exists(FIRMWARE))
     {
         // move to firmware update screen
-        app["screen"] = UPDATESCREEN;
+        appState().screen = UPDATESCREEN;
         _log("New firmware found. Preparing Update.\n");
         return true;
     }
@@ -50,11 +50,11 @@ bool filesystem_check()
     if (cardType == CARD_NONE)
     {
         //
-        app["error"] = "SD CARD NOT INSERTED\n";
-        app["screen"] = ERRORSCREEN;
+        appState().error = "SD CARD NOT INSERTED\n";
+        appState().screen = ERRORSCREEN;
 
         //
-        _log(app["error"]);
+        _log("%s", appState().error.get().c_str());
 
         return false;
     }

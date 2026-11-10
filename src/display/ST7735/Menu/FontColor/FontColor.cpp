@@ -31,7 +31,7 @@ void FontColor_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     int start_x = 0;  // or center if you want: (ptft->width() - 160)/2
     int start_y = 20; // adjust as needed for your layout
 
-    int selectedFontColorColorIndex = app["selectedFontColorColorIndex"].as<int>();
+    int selectedFontColorColorIndex = appState().selectedFontColorColorIndex.load();
 
     for (int i = 0; i < length; i++)
     {
@@ -64,7 +64,7 @@ void FontColor_keyboard(char key, bool pressed)
         _log("Exit FontColor without saving");
 
         //
-        app["menu"]["state"] = MENU_HOME;
+        appState().menuState = MENU_HOME;
     }
 
     // MENU - SELECTED ACTION
@@ -74,10 +74,10 @@ void FontColor_keyboard(char key, bool pressed)
         _log("Exit FontColor");
 
         //
-        app["menu"]["state"] = MENU_HOME;
+        appState().menuState = MENU_HOME;
 
         // Save Config
-        app["config"]["foreground_color"] = colors[app["selectedFontColorColorIndex"].as<int>()];
+        app["config"]["foreground_color"] = colors[appState().selectedFontColorColorIndex.load()];
         config_save();
     }
 
@@ -85,23 +85,23 @@ void FontColor_keyboard(char key, bool pressed)
     else if (key == 21 || key == 19)
     {
         //
-        int selectedFontColorColorIndex = app["selectedFontColorColorIndex"].as<int>();
+        int selectedFontColorColorIndex = appState().selectedFontColorColorIndex.load();
         selectedFontColorColorIndex++;
         if (selectedFontColorColorIndex > sizeof(colors) / sizeof(colors[0]))
             selectedFontColorColorIndex = 0;
 
-        app["selectedFontColorColorIndex"] = selectedFontColorColorIndex;
+        appState().selectedFontColorColorIndex = selectedFontColorColorIndex;
     }
 
     // DOWN
     else if (key == 20 || key == 18)
     {
         //
-        int selectedFontColorColorIndex = app["selectedFontColorColorIndex"].as<int>();
+        int selectedFontColorColorIndex = appState().selectedFontColorColorIndex.load();
         selectedFontColorColorIndex--;
         if (selectedFontColorColorIndex < 0)
             selectedFontColorColorIndex = sizeof(colors) / sizeof(colors[0]) - 1;
 
-        app["selectedFontColorColorIndex"] = selectedFontColorColorIndex;
+        appState().selectedFontColorColorIndex = selectedFontColorColorIndex;
     }
 }

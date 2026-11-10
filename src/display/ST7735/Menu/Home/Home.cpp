@@ -117,11 +117,11 @@ void Home_keyboard(char key, bool pressed)
             _log("Exit is selected. UsbKeyboard: %d\n", UsbKeyboard);
             if (UsbKeyboard)
             {
-                app["screen"] = KEYBOARDSCREEN;
+                appState().screen = KEYBOARDSCREEN;
             }
             else
             {
-                app["screen"] = WORDPROCESSOR;
+                appState().screen = WORDPROCESSOR;
             }
         }
         // 0 - USB Keyboard
@@ -132,7 +132,7 @@ void Home_keyboard(char key, bool pressed)
             config_save();
 
             // load USB Keyboard
-            app["screen"] = KEYBOARDSCREEN;
+            appState().screen = KEYBOARDSCREEN;
         }
 
         // 1 - writerDeck
@@ -143,49 +143,49 @@ void Home_keyboard(char key, bool pressed)
             config_save();
 
             // load USB Keyboard
-            app["screen"] = WORDPROCESSOR;
+            appState().screen = WORDPROCESSOR;
         }
 
         // 2 - Drive Mode
         else if (selectedHome == 2)
         {
             _debug("Export File Selected\n");
-            app["menu"]["state"] = MENU_STORAGE;
+            appState().menuState = MENU_STORAGE;
         }
 
         // 3 - Send Text
         else if (selectedHome == 3)
         {
             _debug("Send Text Selected\n");
-            app["menu"]["state"] = MENU_SYNC;
+            appState().menuState = MENU_SYNC;
         }
 
         // 4 - Info Text
         else if (selectedHome == 4)
         {
             _debug("Info Text Selected\n");
-            app["menu"]["state"] = MENU_INFO;
+            appState().menuState = MENU_INFO;
         }
 
         // 5 - Brightness
         else if (selectedHome == 5)
         {
             _debug("Brightness Selected\n");
-            app["menu"]["state"] = MENU_BRIGHTNESS;
+            appState().menuState = MENU_BRIGHTNESS;
         }
 
         // 6 - Background Color
         else if (selectedHome == 6)
         {
             _debug("Background Color Selected\n");
-            app["menu"]["state"] = MENU_BACKGROUND;
+            appState().menuState = MENU_BACKGROUND;
         }
 
         // 7 - Font Color
         else if (selectedHome == 7)
         {
             _debug("Font Color Selected\n");
-            app["menu"]["state"] = MENU_FONTCOLOR;
+            appState().menuState = MENU_FONTCOLOR;
         }
 
         // 8 - Firmware Update
@@ -203,21 +203,21 @@ void Home_keyboard(char key, bool pressed)
             _debug("Clear Text Selected\n");
 
             // Delete file content
-            app["menu"]["state"] = MENU_CLEAR;
+            appState().menuState = MENU_CLEAR;
         }
 
         // 10 - Language (English / Korean)
         else if (selectedHome == 10)
         {
             _debug("Language Selected\n");
-            app["menu"]["state"] = MENU_LANGUAGE;
+            appState().menuState = MENU_LANGUAGE;
         }
 
         // 11 - Word Rain typing game
         else if (selectedHome == 11)
         {
             _debug("Word Rain Selected\n");
-            app["screen"] = GAMESCREEN;
+            appState().screen = GAMESCREEN;
         }
     }
 }

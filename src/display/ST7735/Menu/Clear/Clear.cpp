@@ -44,11 +44,11 @@ void Clear_keyboard(char key, bool pressed)
         Editor::getInstance().clearFile();
 
         //
-        app["screen"] = WORDPROCESSOR;
+        appState().screen = WORDPROCESSOR;
     }
     else
     {
         // back to home menu
-        app["menu"]["state"] = MENU_HOME;
+        appState().menuState = MENU_HOME;
     }
 }

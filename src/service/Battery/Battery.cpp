@@ -33,7 +33,7 @@ void battery_loop()
             percent = 0.0f;
 
         //
-        app["battery"] = percent;
+        appState().battery = percent;
 
         // Log
         _debug("Battery %f %% voltage: %.2f V raw: %d\n", percent, voltage, raw);

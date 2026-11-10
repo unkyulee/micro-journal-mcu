@@ -94,13 +94,13 @@ void SendScreen_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // computer disconnected while sending
     if (sendRequested && !bleKeyboard.isConnected())
-        app["send_stop"] = true;
+        appState().sendStop = true;
 
     // sending finished or stopped
-    if (sendRequested && app["send_finished"].as<bool>())
+    if (sendRequested && appState().sendFinished.load())
     {
         sendRequested = false;
-        sendResult = app["send_stop"].as<bool>() ? "Send stopped." : "Send completed.";
+        sendResult = appState().sendStop.load() ? "Send stopped." : "Send completed.";
         sendStatePrev = -1;
     }
 
@@ -156,7 +156,7 @@ void SendScreen_keyboard(int key)
     // any key during the process stops sending
     if (sendRequested)
     {
-        app["send_stop"] = true;
+        appState().sendStop = true;
         return;
     }
 
@@ -174,8 +174,8 @@ void SendScreen_keyboard(int key)
         send_progress_reset();
         sendRequested = true;
         sendResult = "";
-        app["task"] = "send_start";
-        app["send_stop"] = false;
-        app["send_finished"] = false;
+        appState().requestTask(TASK_SEND_START);
+        appState().sendStop = false;
+        appState().sendFinished = false;
     }
 }

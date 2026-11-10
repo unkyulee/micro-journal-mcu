@@ -16,11 +16,6 @@
 #include "display/ST7735/display_ST7735.h"
 #endif
 
-// Cardputer
-#ifdef CARDPUTER
-#include "display/CARDPUTER/display_CARDPUTER.h"
-#endif
-
 // Reflective LCD
 #ifdef REV8
 #include "display/RLCD/display_RLCD.h"
@@ -41,19 +36,14 @@ void display_setup()
   display_ST7735_setup();
 #endif
 
-// Cardputer
-#ifdef CARDPUTER
-  display_CARDPUTER_setup();
-#endif
-
 #ifdef REV8
   display_RLCD_setup();
 #endif
 
   // Identifying which screen to show
   JsonDocument &app = status();
-  int screen = app["screen"].as<int>();
-  app["screen_prev"] = -1;
+  int screen = appState().screen.load();
+  appState().screenPrev = -1;
 
   //
   _log("Display initializing with screen %d\n", screen);
@@ -82,23 +72,23 @@ void display_setup()
     // Check if USB Keyboard is enabled
     if (usbKeyboard)
     {
-      app["screen"] = KEYBOARDSCREEN;
+      appState().screen = KEYBOARDSCREEN;
     }
 
     else if (disabledWakeUp)
     {
       // show the word processor immediately when wakeup is disabled
-      app["screen"] = WORDPROCESSOR;
+      appState().screen = WORDPROCESSOR;
     }
     else
     {
       // show wakeup screen
-      app["screen"] = WAKEUPSCREEN;
+      appState().screen = WAKEUPSCREEN;
     }
   }
 
   //
-  _log("Display loading screen %d\n", app["screen"].as<int>());
+  _log("Display loading screen %d\n", appState().screen.load());
 }
 
 //
@@ -114,11 +104,6 @@ void display_loop()
 
 #ifdef ST7735_DRIVER
   display_ST7735_loop();
-#endif
-
-// Cardputer
-#ifdef CARDPUTER
-  display_CARDPUTER_loop();
 #endif
 
 #ifdef REV8
@@ -143,10 +128,6 @@ void display_keyboard(int key, bool pressed, int index)
   display_ST7735_keyboard(key, pressed, index);
 #endif
 
-#ifdef CARDPUTER
-  display_CARDPUTER_keyboard(key, pressed, index);
-#endif
-
 #ifdef REV8
   display_RLCD_keyboard(key, pressed, index);
 #endif
@@ -164,11 +145,6 @@ int display_core()
 
 #ifdef ST7735_DRIVER
   return display_ST7735_core();
-#endif
-
-// Cardputer
-#ifdef CARDPUTER
-  return display_CARDPUTER_core();
 #endif
 
 #ifdef REV8

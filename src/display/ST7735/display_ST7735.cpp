@@ -30,7 +30,7 @@ int display_ST7735_core()
   JsonDocument &app = status();
 
   // if storage mode run at the main core
-  if (app["menu"]["state"] == MENU_STORAGE)
+  if (appState().menuState == MENU_STORAGE)
     return 0;
 
   // by default run at the seperate core
@@ -73,7 +73,7 @@ void display_ST7735_setup()
 void display_ST7735_loop()
 {
   JsonDocument &app = status();
-  int screen = app["screen"].as<int>();
+  int screen = appState().screen.load();
 
   //
   static unsigned int last = millis();
@@ -82,7 +82,7 @@ void display_ST7735_loop()
     last = millis();
 
     //
-    int screen_prev = app["screen_prev"].as<int>();
+    int screen_prev = appState().screenPrev.load();
     int brightness = app["config"]["brightness"].as<int>();
     brightness = brightness * 25;
     brightness = min(brightness, 255);
@@ -169,7 +169,7 @@ void display_ST7735_loop()
     }
 
     //
-    app["screen_prev"] = screen;
+    appState().screenPrev = screen;
   }
 }
 
@@ -178,7 +178,7 @@ void display_ST7735_keyboard(int key, bool pressed, int index)
 {
   //
   JsonDocument &app = status();
-  int screen = app["screen"].as<int>();
+  int screen = appState().screen.load();
 
   _debug("[display_ST7735_keyboard] Key:[%d] pressed: %d Inex: [%d] Screen: %d\n", key, pressed, index, screen);
 

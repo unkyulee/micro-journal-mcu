@@ -3,6 +3,7 @@
 
 //
 #include "service/Editor/Editor.h"
+#include "service/Editor/EditorTimers.h"
 #include "keyboard/keyboard.h"
 #include "display/display.h"
 
@@ -44,7 +45,6 @@ const int cursorHeight = 2;
 
 // Some flags
 bool clear_background = true;
-unsigned int last_sleep = millis();
 
 //
 void WP_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
@@ -95,22 +95,27 @@ void WP_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     clear_background = true;
 
     // sleep timer reset
-    last_sleep = millis();
+    editor_activity();
 }
 
 //
 void WP_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 {
+    // Take this round's copy of the editor. Everything drawn below reads
+    // Editor::view(), so the text can't change half way through a redraw
+    // while keys keep arriving on the other core.
+    Editor::getInstance().snapshot();
+
     // the editor swapped to a different window of the file - force a full redraw
-    if (Editor::getInstance().pageChanged)
+    if (Editor::view().pageChanged)
     {
-        Editor::getInstance().pageChanged = false;
+        Editor::view().pageChanged = false;
         clear_background = true;
     }
 
     // timers
-    WP_check_saved();
-    WP_check_sleep();
+    editor_autosave(3000);
+    editor_sleep_check(10 * 60 * 1000);
 
     // CLEAR BACKGROUND
     WP_render_clear(ptft, pu8f);
@@ -149,9 +154,9 @@ void WP_render_text(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     // Cursor Information
     static int cursorLine_prev = 0;
     static int cursorLinePos_prev = 0;
-    int cursorLine = Editor::getInstance().cursorLine;
-    int cursorLinePos = Editor::getInstance().cursorLinePos;
-    int totalLine = Editor::getInstance().totalLine;
+    int cursorLine = Editor::view().cursorLine;
+    int cursorLinePos = Editor::view().cursorLinePos;
+    int totalLine = Editor::view().totalLine;
 
     //
     // Middle part of the text will be rendered
@@ -174,7 +179,7 @@ void WP_render_text(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
         pu8f->setCursor(0, wp_font->lineHeight);
 
         // start line
-        int rows = Editor::getInstance().rows;
+        int rows = Editor::view().rows;
 
         //
         for (int i = cursorLine - rows; i < cursorLine; i++)
@@ -209,8 +214,8 @@ void WP_render_text(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 //
 void WP_render_line(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f, int line_num)
 {
-    char *line = Editor::getInstance().linePositions[line_num];
-    int length = Editor::getInstance().lineLengths[line_num];
+    char *line = Editor::view().linePositions[line_num];
+    int length = Editor::view().lineLengths[line_num];
 
     //_debug("WP_render_line %d, length: %d\n", line_num, length);
 
@@ -238,16 +243,16 @@ void WP_render_cursor(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // Cursor information
     static int cursorLineCols_prev = 0;
-    int cursorLinePos = Editor::getInstance().cursorLinePos;
-    int cursorLineCols = Editor::getInstance().cursorLineCols;
-    int cursorPos = Editor::getInstance().cursorPos;
+    int cursorLinePos = Editor::view().cursorLinePos;
+    int cursorLineCols = Editor::view().cursorLineCols;
+    int cursorPos = Editor::view().cursorPos;
 
     // Calculate Cursor X position
     // reached the line where cursor is
     // cursor offset is measured in display columns so it stays correct
     // once double-width glyphs exist
     int cursorX = 0;
-    if (Editor::getInstance().buffer[cursorPos - 1] != '\n' && cursorLinePos != 0)
+    if (Editor::view().buffer[cursorPos - 1] != '\n' && cursorLinePos != 0)
     {
         cursorX = cursorLineCols * wp_font->glyphWidth;
     }
@@ -288,7 +293,7 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     const int width = 3;
     int color = TFT_RED;
     // SAVE STATUS
-    if (Editor::getInstance().saved)
+    if (Editor::view().saved)
     {
         color = TFT_GREEN;
     }
@@ -302,7 +307,7 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // Word count print
     int small_font_width = 10;
-    int bufferSize = Editor::getInstance().wordCountFile + Editor::getInstance().wordCountBuffer; ;
+    int bufferSize = Editor::view().wordCountFile + Editor::view().wordCountBuffer; ;
     String bufferStr = String(bufferSize);
     // Calculate x position so it's right-aligned
     int textWidth = bufferStr.length() * small_font_width;
@@ -317,7 +322,7 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     pu8f->print(bufferStr);
 
     // height 100% 80
-    float batteryPercent = app["battery"].as<float>();
+    float batteryPercent = appState().battery.load();
     int height = 80 * batteryPercent / 100.0;
     if (height < width)
         height = width;
@@ -343,9 +348,9 @@ void WP_render_clear(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // the composing Hangul character was replaced in place - the new glyph
     // doesn't necessarily cover the old one's pixels, so repaint fully
-    if (Editor::getInstance().charReplaced)
+    if (Editor::view().charReplaced)
     {
-        Editor::getInstance().charReplaced = false;
+        Editor::view().charReplaced = false;
         clear_background = true;
     }
 
@@ -356,14 +361,14 @@ void WP_render_clear(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     //
     static int cursorLine_prev = 0;
     static int cursorPos_prev = 0;
-    int cursorLine = Editor::getInstance().cursorLine;
-    int cursorPos = Editor::getInstance().cursorPos;
-    int cursorLinePos = Editor::getInstance().cursorLinePos;
-    int cursorLineLength = Editor::getInstance().lineLengths[cursorLine];
+    int cursorLine = Editor::view().cursorLine;
+    int cursorPos = Editor::view().cursorPos;
+    int cursorLinePos = Editor::view().cursorLinePos;
+    int cursorLineLength = Editor::view().lineLengths[cursorLine];
 
     //
     static int bufferSize_prev = 0;
-    int bufferSize = Editor::getInstance().getBufferSize();
+    int bufferSize = Editor::view().getBufferSize();
 
     // When new line clear everything
     if (cursorLine_prev != cursorLine)
@@ -421,17 +426,17 @@ void WP_keyboard(int key, bool pressed)
             // Save before transitioning to the menu
             Editor::getInstance().saveFile();
 
-            if (app["knobLongPressed"].as<bool>())
+            if (appState().knobLongPressed.load())
             {
                 // open menu
                 _debug("WP_keyboard - Received MENU Key\n");
-                app["screen"] = MENUSCREEN;
+                appState().screen = MENUSCREEN;
             }
             else
             {
                 // move to writerDeck
                 _debug("WP_keyboard - Received LONG PRESS MENU Key\n");
-                app["screen"] = KEYBOARDSCREEN;
+                appState().screen = KEYBOARDSCREEN;
 
                 // save the default screen to config
                 app["config"]["UsbKeyboard"] = true;
@@ -452,7 +457,7 @@ void WP_keyboard(int key, bool pressed)
 
             // open menu
             _debug("WP_keyboard - Received ESC Key\n");
-            app["screen"] = MENUSCREEN;
+            appState().screen = MENUSCREEN;
         }
 
         // ESC button is ignored
@@ -486,57 +491,3 @@ void WP_keyboard(int key, bool pressed)
     }
 }
 
-//
-// Check if text is saved
-void WP_check_saved()
-{
-    //
-    static unsigned int last = millis();
-    static int lastBufferSize = Editor::getInstance().getBufferSize();
-    int bufferSize = Editor::getInstance().getBufferSize();
-
-    //
-    // when the file is saved then extend the autosave timer
-    if (lastBufferSize != bufferSize)
-    {
-        last = millis();
-
-        //
-        lastBufferSize = bufferSize;
-    }
-
-    //
-    // when idle for 3 seconds then auto save
-    if (millis() - last > 3000)
-    {
-        //
-        last = millis();
-
-        if (!Editor::getInstance().saved)
-            Editor::getInstance().saveFile();
-    }
-}
-
-//
-//
-void WP_check_sleep()
-{
-    //
-    // when the file is saved then extend the sleep timer
-    if (!Editor::getInstance().saved)
-    {
-        // when typed then reset sleep timer
-        last_sleep = millis();
-    }
-
-    // 600 seconds - 10 minutes
-    if (millis() - last_sleep > 600000)
-    {
-        // if no action for 10 minute go to sleep
-        last_sleep = millis();
-
-        //
-        JsonDocument &app = status();
-        app["screen"] = SLEEPSCREEN;
-    }
-}

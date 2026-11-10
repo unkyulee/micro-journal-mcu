@@ -17,10 +17,10 @@ void run_firmare_update(const char* filename)
     if (!firmwareFile)
     {
         //
-        app["error"] = format("ERROR OPENING: %s\n", filename);
-        app["screen"] = ERRORSCREEN;
+        appState().error = format("ERROR OPENING: %s\n", filename);
+        appState().screen = ERRORSCREEN;
 
-        _log(app["error"]);        
+        _log("%s", appState().error.get().c_str());        
 
         return;
     }
@@ -45,8 +45,8 @@ void run_firmare_update(const char* filename)
                 Serial.println("Error ending update!");
 
                 //
-                app["error"] = "UPDATE FAILED AT THE END";
-                app["screen"] = ERRORSCREEN;
+                appState().error = "UPDATE FAILED AT THE END";
+                appState().screen = ERRORSCREEN;
             }
         }
         else
@@ -55,8 +55,8 @@ void run_firmare_update(const char* filename)
             Serial.println("Error writing firmware!");
 
             //
-            app["error"] = "UPDATE FAILED TO APPLY";
-            app["screen"] = ERRORSCREEN;
+            appState().error = "UPDATE FAILED TO APPLY";
+            appState().screen = ERRORSCREEN;
         }
     }
     else
@@ -65,11 +65,10 @@ void run_firmare_update(const char* filename)
         Serial.println("Error beginning update!");
 
         //
-        app["error"] = "UPDATE FAILED TO BEGIN";
-        app["screen"] = ERRORSCREEN;
+        appState().error = "UPDATE FAILED TO BEGIN";
+        appState().screen = ERRORSCREEN;
     }
 
     // Close firmware file
     firmwareFile.close();
-    delay(100);
 }

@@ -22,7 +22,6 @@ void keypad_load_config(String filename, int *layers, int size, const char **key
         //
         String fileString = file.readString();
         file.close();
-        delay(100);
 
         //
         _debug(fileString.c_str());
@@ -37,11 +36,11 @@ void keypad_load_config(String filename, int *layers, int size, const char **key
         if (error)
         {
             //
-            app["error"] = format("%s not in a correct json form: %s\n", filename.c_str(), error.c_str());
-            // app["screen"] = ERRORSCREEN;
+            appState().error = format("%s not in a correct json form: %s\n", filename.c_str(), error.c_str());
+            // appState().screen = ERRORSCREEN;
 
             //
-            _log(app["error"]);
+            _log("%s", appState().error.get().c_str());
 
             return;
         }
@@ -75,10 +74,9 @@ void keypad_load_config(String filename, int *layers, int size, const char **key
 
         // Close the file
         file.close();
-        delay(100);
 
         // custom keymap is in use
-        app["keyboard_custom"] = true;
+        appState().keyboardCustom = true;
     }
 }
 

@@ -1,0 +1,61 @@
+# Compiles the firmware for every hardware revision.
+#
+# The revisions share most of the source but each one builds a different
+# subset of it with different flags, so a change that compiles for one board
+# can break another. This runs on every push and pull request and fails when
+# any environment stops compiling. It only builds - nothing is uploaded to a
+# device.
+
+name: Build firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      # let the other boards finish when one fails, to see everything that broke
+      fail-fast: false
+      matrix:
+        # every environment in platformio.ini, except rev_8: that one is only
+        # the shared base of rev_8_type1 and rev_8_type2 and is not a
+        # firmware by itself
+        environment:
+          - rev_4_68
+          - rev_5_ili9341
+          - rev_5_st7789
+          - rev_6_ili9341
+          - rev_6_st7789
+          - rev_7
+          - rev_8_type1
+          - rev_8_type2
+
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # toolchains and libraries are large and pinned in platformio.ini,
+      # so they only need downloading again when that file changes
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ matrix.environment }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            platformio-${{ matrix.environment }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build ${{ matrix.environment }}
+        run: pio run --environment ${{ matrix.environment }}

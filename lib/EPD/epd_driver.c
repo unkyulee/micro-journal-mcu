@@ -278,10 +278,7 @@ Rect_t epd_full_screen()
 
 void epd_clear()
 {
-    // TEMPORARY instrumentation for full-refresh slowness diagnosis
-    int64_t t0 = esp_timer_get_time();
     epd_clear_area(epd_full_screen());
-    printf("[epd] epd_clear: %lld ms\n", (esp_timer_get_time() - t0) / 1000);
 }
 
 
@@ -801,9 +798,6 @@ void IRAM_ATTR epd_draw_image(Rect_t area, uint8_t *data, DrawMode_t mode)
 {
     uint8_t frame_count = 15;
 
-    // TEMPORARY instrumentation for full-refresh slowness diagnosis
-    int64_t t0 = esp_timer_get_time();
-
     for (uint8_t k = 0; k < frame_count; k++)
     {
         provide_params.area = area;
@@ -824,8 +818,6 @@ void IRAM_ATTR epd_draw_image(Rect_t area, uint8_t *data, DrawMode_t mode)
         xSemaphoreTake(feed_sem, portMAX_DELAY);
     }
 
-    printf("[epd] draw_image %ldx%ld: %lld ms\n", (long)area.width, (long)area.height,
-           (esp_timer_get_time() - t0) / 1000);
 }
 
 /******************************************************************************/

@@ -97,8 +97,8 @@ void Layout_keyboard(char key)
 
     // Save configuration and update the screen
     config_save();
-    app["screen"] = WORDPROCESSOR;
+    appState().screen = WORDPROCESSOR;
 
     // Go back to the home menu
-    app["menu"]["state"] = MENU_HOME;
+    appState().menuState = MENU_HOME;
 }

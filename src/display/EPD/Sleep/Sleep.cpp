@@ -52,5 +52,5 @@ void Sleep_keyboard(char key)
 {
     // Any Keystroke moves to word processor
     JsonDocument &app = status();
-    app["screen"] = WORDPROCESSOR;
+    appState().screen = WORDPROCESSOR;
 }

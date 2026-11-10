@@ -15,7 +15,7 @@
 static void PairBLE_search()
 {
     JsonDocument &app = status();
-    app["ble_auto_pair"] = true;
+    appState().bleAutoPair = true;
     BLEServer_setup("Micro Journal 5");
 }
 
@@ -62,7 +62,7 @@ void PairBLE_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     {
         ptft->printf("Keyboard: %s\n", app["config"]["ble"]["name"].as<const char *>());
 
-        if (app["ble_connected"].as<bool>())
+        if (appState().bleConnected.load())
         {
             ptft->println("Status: Connected");
         }

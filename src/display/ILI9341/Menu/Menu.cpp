@@ -38,7 +38,7 @@ void Menu_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     menu_clear = true;
 
     //
-    app["menu"]["state"] = MENU_HOME;
+    appState().menuState = MENU_HOME;
 }
 
 void Menu_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
@@ -46,10 +46,10 @@ void Menu_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     JsonDocument &app = status();
 
     // check if app clear is set as well
-    if (app["clear"].as<bool>() == true)
+    if (appState().clear.load() == true)
     {
         // reset global clear flag
-        app["clear"] = false;
+        appState().clear = false;
 
         // clear screen
         menu_clear = true;
@@ -83,7 +83,7 @@ void Menu_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     ptft->print(" ");
 
     // draw sub module of menu
-    int menu_state = app["menu"]["state"].as<int>();
+    int menu_state = appState().menuState.load();
 
     if (menu_state == MENU_HOME)
     {
@@ -183,7 +183,7 @@ void Menu_keyboard(char key)
     Menu_clear();
 
     // based on the current menu state
-    int menu_state = app["menu"]["state"].as<int>();
+    int menu_state = appState().menuState.load();
     if (menu_state == MENU_HOME)
     {
         Home_keyboard(key);

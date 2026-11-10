@@ -37,16 +37,12 @@ void send_loop()
 
         //
         JsonDocument &app = status();
-        String task = app["task"].as<String>();
-
-        if (task == "send_start")
+        if (appState().takeTask(TASK_SEND_START))
         {
             //
             _log("[send_loop] Send Start Request\n");
 
-            //
-            app["task"] = "";
-            app["send_finished"] = false;
+            appState().sendFinished = false;
 
             //
             send_start();
@@ -69,7 +65,7 @@ void send_start()
     if (!file || !file.available())
     {
         _log("Send_render: Failed to open file: %s\n", Editor::getInstance().fileName.c_str());
-        app["send_finished"] = true;
+        appState().sendFinished = true;
         return;
     }
 
@@ -79,7 +75,7 @@ void send_start()
     send_total = file.size();
 
     // Read file content in small chunks
-    while (file.available() && app["send_stop"].as<bool>() == false)
+    while (file.available() && appState().sendStop.load() == false)
     {
         //
         int c = file.read();
@@ -95,8 +91,7 @@ void send_start()
     }
     //
     file.close();
-    delay(100);
 
     //
-    app["send_finished"] = true;
+    appState().sendFinished = true;
 }

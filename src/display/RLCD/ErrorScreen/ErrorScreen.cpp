@@ -21,7 +21,7 @@ void ErrorScreen_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u
 {
     // Text to be displayed
     JsonDocument &app = status();
-    String text = app["error"].as<String>();
+    String text = appState().error.get();
 
     ///
     u8->setFont(u8g2_font_profont22_tf);

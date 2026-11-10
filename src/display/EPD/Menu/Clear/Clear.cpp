@@ -1,6 +1,7 @@
 #include "Clear.h"
 #include "../Menu.h"
 #include "app/app.h"
+#include "service/Menu/MenuController.h"
 #include "display/display.h"
 #include <display/EPD/display_EPD.h>
 
@@ -53,20 +54,6 @@ void Clear_render()
 //
 void Clear_keyboard(char key)
 {
-    _debug("Clear_keyboard %c\n", key);
-    JsonDocument &app = status();
-
-    // delete confirmed
-    if (key == 'Y' || key == 'y')
-    {
-        // empty the file
-        Editor::getInstance().clearFile();
-
-        // go back to the word processor
-        app["screen"] = WORDPROCESSOR;
-    }
-
-    // go back to home menu
-    //
-    app["menu"]["state"] = MENU_HOME;
+    // the rules are shared by all displays, see service/Menu/MenuController
+    menu_clear_keyboard(key);
 }

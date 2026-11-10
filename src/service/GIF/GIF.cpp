@@ -95,7 +95,7 @@ void gif_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
         // move to next screen
         JsonDocument &app = status();
-        app["screen"] = screen_next;
+        appState().screen = screen_next;
     }
 }
 
@@ -141,7 +141,6 @@ bool gif_load(String filename)
 
         // Close the file
         file.close();
-        delay(100);
 
         // gif loading success
         return true;

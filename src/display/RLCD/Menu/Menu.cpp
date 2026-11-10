@@ -35,7 +35,7 @@ void Menu_setup(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     menu_clear = true;
 
     //
-    app["menu"]["state"] = MENU_HOME;
+    appState().menuState = MENU_HOME;
 
     //
     
@@ -46,10 +46,10 @@ void Menu_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     JsonDocument &app = status();
 
     // check if app clear is set as well
-    if (app["clear"].as<bool>() == true)
+    if (appState().clear.load() == true)
     {
         // reset global clear flag
-        app["clear"] = false;
+        appState().clear = false;
 
         // clear screen
         menu_clear = true;
@@ -84,7 +84,7 @@ void Menu_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     display->drawLine(0, 25, 400, 25, 1);
 
     // draw sub module of menu
-    int menu_state = app["menu"]["state"].as<int>();
+    int menu_state = appState().menuState.load();
 
     if (menu_state == MENU_HOME)
     {
@@ -148,7 +148,7 @@ void Menu_keyboard(char key)
     Menu_clear();
 
     // based on the current menu state
-    int menu_state = app["menu"]["state"].as<int>();
+    int menu_state = appState().menuState.load();
     if (menu_state == MENU_HOME)
     {
         Home_keyboard(key);

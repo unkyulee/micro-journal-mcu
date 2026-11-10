@@ -28,7 +28,7 @@ void Menu_setup()
 
     //
     JsonDocument &app = status();
-    app["menu"]["state"] = MENU_HOME;
+    appState().menuState = MENU_HOME;
 
     _log("Entering Menu Setup\n");
 }
@@ -39,7 +39,7 @@ void Menu_render()
     JsonDocument &app = status();
 
     // check if app clear is set as well
-    if (app["clear"].as<bool>() == true)
+    if (appState().clear.load() == true)
     {
         menu_clear = true;
     }
@@ -57,7 +57,7 @@ void Menu_render()
 
     // deflag so that it doesn't repeatedely called
     menu_clear = false;
-    app["clear"] = false;
+    appState().clear = false;
 
     ///////////////////////////
     // Render Toolbar
@@ -76,7 +76,7 @@ void Menu_render()
 
     ///////////////////////////
     // draw sub module of menu
-    int menu_state = app["menu"]["state"].as<int>();
+    int menu_state = appState().menuState.load();
 
     if (menu_state == MENU_HOME)
     {
@@ -149,7 +149,7 @@ void Menu_keyboard(char key)
     JsonDocument &app = status();
 
     // clear background for every key stroke
-    int menu_state = app["menu"]["state"].as<int>();
+    int menu_state = appState().menuState.load();
 
     // HOME
     if (menu_state == MENU_HOME)

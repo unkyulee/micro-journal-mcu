@@ -221,6 +221,6 @@ void Foreground_keyboard(char key)
     }
 
     // go back to the word processor
-    app["menu"]["state"] = MENU_HOME;
-    app["screen"] = WORDPROCESSOR;
+    appState().menuState = MENU_HOME;
+    appState().screen = WORDPROCESSOR;
 }

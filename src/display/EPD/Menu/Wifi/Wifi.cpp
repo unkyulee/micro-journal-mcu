@@ -30,7 +30,7 @@ void Wifi_render()
         display_EPD_framebuffer());
 
     // RENDER based on the screen index
-    int wifi_config_status = app["wifi_config_status"].as<int>();
+    int wifi_config_status = appState().wifiConfigStatus.load();
     if (wifi_config_status == WIFI_CONFIG_LIST)
     {
         Wifi_render_list();
@@ -118,8 +118,8 @@ void Wifi_render_edit()
 {
     // EDIT WIFI CONFIG
     JsonDocument &app = status();
-    int wifi_config_index = app["wifi_config_index"].as<int>();
-    int wifi_config_status = app["wifi_config_status"].as<int>();
+    int wifi_config_index = appState().wifiConfigIndex.load();
+    int wifi_config_status = appState().wifiConfigStatus.load();
 
     // Load saved WiFi connection information from the app["config"]["access_points"] array
     JsonArray savedAccessPoints = app["wifi"]["access_points"].as<JsonArray>();

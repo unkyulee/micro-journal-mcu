@@ -12,7 +12,7 @@ void ErrorScreen_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 {
     // Text to be displayed
     JsonDocument &app = status();
-    String text = app["error"].as<String>();
+    String text = appState().error.get();
 
     ///
     ptft->setTextSize(1); // Adjust text size as needed

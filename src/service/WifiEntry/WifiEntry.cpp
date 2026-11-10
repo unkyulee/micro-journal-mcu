@@ -51,7 +51,7 @@ void WifiEntry_keyboard(char key)
 
                 // move to password enter screen
                 wifi_config_status = WIFI_CONFIG_EDIT_KEY;
-                app["wifi_config_status"] = wifi_config_status;
+                appState().wifiConfigStatus = wifi_config_status;
             }
             else if (wifi_config_status == WIFI_CONFIG_EDIT_KEY)
             {
@@ -67,7 +67,7 @@ void WifiEntry_keyboard(char key)
 
                 // go back to the configuration list
                 wifi_config_status = WIFI_CONFIG_LIST;
-                app["wifi_config_status"] = wifi_config_status;
+                appState().wifiConfigStatus = wifi_config_status;
             }
         }
         // BACK SPACE
@@ -93,7 +93,7 @@ void WifiEntry_keyboard(char key)
         {
             //
             // go back to home menu
-            app["menu"]["state"] = MENU_HOME;
+            appState().menuState = MENU_HOME;
 
             return;
         }
@@ -110,11 +110,11 @@ void WifiEntry_keyboard(char key)
             // determine the index to edit
             wifi_config_index = key - '1';
             _log("Wifi Entry chosen %d\n", wifi_config_index);
-            app["wifi_config_index"] = wifi_config_index;
+            appState().wifiConfigIndex = wifi_config_index;
 
             // move the screen
             wifi_config_status = WIFI_CONFIG_EDIT_SSID;
-            app["wifi_config_status"] = wifi_config_status;
+            appState().wifiConfigStatus = wifi_config_status;
 
             return;
         }
@@ -138,7 +138,6 @@ void wifi_config_load()
         String wifiString = file.readString();
         _log("Closing wifi.json file\n");
         file.close();
-        delay(100);
 
         // check if configString is empty
         if (wifiString.isEmpty())
@@ -160,8 +159,8 @@ void wifi_config_load()
             _log("wifi.json deserializeJson() failed: %s\n", error.c_str());
 
             //
-            app["error"] = "Wrong format wifi.json";
-            app["screen"] = ERRORSCREEN;
+            appState().error = "Wrong format wifi.json";
+            appState().screen = ERRORSCREEN;
 
             // delete wifi.json from SPIFF
             gfs()->remove("/wifi.json");
@@ -220,5 +219,4 @@ void wifi_config_save()
 
     // close config.json
     file.close();
-    delay(100);
 }

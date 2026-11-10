@@ -1,6 +1,7 @@
 #include "Sync.h"
 #include "../Menu.h"
 #include "app/app.h"
+#include "service/Menu/MenuController.h"
 #include "display/display.h"
 //
 #include "service/WifiEntry/WifiEntry.h"
@@ -34,7 +35,7 @@ void Sync_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     u8->println("");
 
     // SYNC STATE
-    int sync_state = app["sync_state"].as<int>();
+    int sync_state = appState().syncState.load();
 
     //
     if (sync_state == SYNC_START)
@@ -48,7 +49,7 @@ void Sync_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 
     else if (sync_state == SYNC_STARTED || sync_state == SYNC_PROGRESS)
     {
-        String message = app["sync_message"].as<String>();
+        String message = appState().syncMessage.get();
         if (message != "")
         {
             //
@@ -61,7 +62,7 @@ void Sync_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     //
     else if (sync_state == SYNC_ERROR)
     {
-        String error = app["sync_error"].as<String>();
+        String error = appState().syncError.get();
         if (error != "")
         {
             u8->println(error);
@@ -87,19 +88,6 @@ void Sync_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 //
 void Sync_keyboard(char key)
 {
-    //
-    JsonDocument &app = status();
-
-    // SYNC STATE
-    int sync_state = app["sync_state"].as<int>();
-    if (sync_state == SYNC_COMPLETED || sync_state == SYNC_ERROR)
-    {
-        app["screen"] = WORDPROCESSOR;
-    }
-
-    // back to the menu, where WiFi setup and Drive Mode are
-    else if (sync_state == SYNC_NOT_CONFIGURED)
-    {
-        app["menu"]["state"] = MENU_HOME;
-    }
+    // the rules are shared by all displays, see service/Menu/MenuController
+    menu_sync_keyboard(key);
 }

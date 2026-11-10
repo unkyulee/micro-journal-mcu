@@ -27,7 +27,7 @@ TFT_eSprite &display_ILI9341_sprite()
 int display_ILI9341_core()
 {
   JsonDocument &app = status();
-  int screen = app["screen"].as<int>();
+  int screen = appState().screen.load();
 
   // if app is not ready then run in the main core
   if (!app_ready())
@@ -36,7 +36,7 @@ int display_ILI9341_core()
   // IN MENU run it in the main core, so that sync process runs independently
   if (screen == MENUSCREEN)
   {
-    int menu = app["menu"]["state"].as<int>();
+    int menu = appState().menuState.load();
     if (menu == MENU_SYNC || menu == MENU_WEB || menu == MENU_BLUETOOTH)
       return 0;
   }
@@ -46,7 +46,7 @@ int display_ILI9341_core()
     return 0;
 
   // If BLE is set then let the BLE work on background alone
-  if (app["config"]["ble"]["address"].is<const char *>())
+  if (appState().bleConfigured.load())
   {
     return 0;
   }
@@ -83,8 +83,8 @@ void display_ILI9341_loop()
     last = millis();
 
     JsonDocument &app = status();
-    int screen = app["screen"].as<int>();
-    int screen_prev = app["screen_prev"].as<int>();
+    int screen = appState().screen.load();
+    int screen_prev = appState().screenPrev.load();
 
     // ERROR SCREEN
     if (screen == ERRORSCREEN)
@@ -186,7 +186,7 @@ void display_ILI9341_loop()
     }
 
     //
-    app["screen_prev"] = screen;
+    appState().screenPrev = screen;
   }
 }
 
@@ -194,7 +194,7 @@ void display_ILI9341_loop()
 void display_ILI9341_keyboard(int key, bool pressed, int index)
 {
   JsonDocument &app = status();
-  int screen = app["screen"].as<int>();
+  int screen = appState().screen.load();
 
   if (screen == ERRORSCREEN)
   {
@@ -251,5 +251,5 @@ void display_ILI9341_keyboard(int key, bool pressed, int index)
 void display_ILI9341_keyboard_report(uint8_t modifier, uint8_t reserved, uint8_t *keycodes)
 {
   JsonDocument &app = status();
-  int screen = app["screen"].as<int>();
+  int screen = appState().screen.load();
 }

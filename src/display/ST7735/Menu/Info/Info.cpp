@@ -56,5 +56,5 @@ void Info_keyboard(char key, bool pressed)
 
     // back to home menu
     JsonDocument &app = status();
-    app["menu"]["state"] = MENU_HOME;
+    appState().menuState = MENU_HOME;
 }

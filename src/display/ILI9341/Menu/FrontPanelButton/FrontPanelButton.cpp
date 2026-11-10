@@ -71,5 +71,5 @@ void FrontPanelButton_keyboard(char key)
 
     // go back to home menu
     //
-    app["menu"]["state"] = MENU_HOME;
+    appState().menuState = MENU_HOME;
 }

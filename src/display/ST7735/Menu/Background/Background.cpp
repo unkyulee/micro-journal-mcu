@@ -31,7 +31,7 @@ void Background_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     int start_x = 0;  // or center if you want: (ptft->width() - 160)/2
     int start_y = 20; // adjust as needed for your layout
 
-    int selectedBackgroundColorIndex = app["selectedBackgroundColorIndex"].as<int>();
+    int selectedBackgroundColorIndex = appState().selectedBackgroundColorIndex.load();
 
     for (int i = 0; i < length; i++)
     {
@@ -64,7 +64,7 @@ void Background_keyboard(char key, bool pressed)
         _log("Exit FontColor without saving");
 
         //
-        app["menu"]["state"] = MENU_HOME;
+        appState().menuState = MENU_HOME;
     }
 
     // MENU - SELECTED ACTION
@@ -74,10 +74,10 @@ void Background_keyboard(char key, bool pressed)
         _log("Exit Background");
 
         //
-        app["menu"]["state"] = MENU_HOME;
+        appState().menuState = MENU_HOME;
 
         // Save Config
-        app["config"]["background_color"] = colors[app["selectedBackgroundColorIndex"].as<int>()];
+        app["config"]["background_color"] = colors[appState().selectedBackgroundColorIndex.load()];
         config_save();
     }
 
@@ -85,23 +85,23 @@ void Background_keyboard(char key, bool pressed)
     else if (key == 21 || key == 19)
     {
         //
-        int selectedBackgroundColorIndex = app["selectedBackgroundColorIndex"].as<int>();
+        int selectedBackgroundColorIndex = appState().selectedBackgroundColorIndex.load();
         selectedBackgroundColorIndex++;
         if (selectedBackgroundColorIndex > sizeof(colors) / sizeof(colors[0]))
             selectedBackgroundColorIndex = 0;    
 
-        app["selectedBackgroundColorIndex"] = selectedBackgroundColorIndex;
+        appState().selectedBackgroundColorIndex = selectedBackgroundColorIndex;
     }
 
     // DOWN
     else if (key == 20 || key == 18)
     {
         //
-        int selectedBackgroundColorIndex = app["selectedBackgroundColorIndex"].as<int>();
+        int selectedBackgroundColorIndex = appState().selectedBackgroundColorIndex.load();
         selectedBackgroundColorIndex--;
         if (selectedBackgroundColorIndex < 0)
             selectedBackgroundColorIndex = sizeof(colors) / sizeof(colors[0]) - 1;
 
-        app["selectedBackgroundColorIndex"] = selectedBackgroundColorIndex;
+        appState().selectedBackgroundColorIndex = selectedBackgroundColorIndex;
     }
 }

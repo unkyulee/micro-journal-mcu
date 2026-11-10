@@ -105,7 +105,7 @@ void keyboard_keypad_68_setup()
 
     // reset long press flag
     JsonDocument &app = status();
-    app["knobLongPressed"] = false;
+    appState().knobLongPressed = false;
 
     //
     _log("Keypad initialized\n");
@@ -121,11 +121,11 @@ void keyboard_keypad_68_loop()
     static bool knob_pressed = false;
 
     // check if knob is long pressed - 2 seconds
-    if (knob_pressed == true && millis() - knob_press_time > 1000 && app["knobLongPressed"].as<bool>() == false)
+    if (knob_pressed == true && millis() - knob_press_time > 1000 && appState().knobLongPressed.load() == false)
     {
         // knob is long pressed
         // mark the flag and send out released event
-        app["knobLongPressed"] = true;
+        appState().knobLongPressed = true;
 
         _debug("[keyboard_keypad_68_loop] knob long press detected\n");
         display_keyboard(MENU, false, 69);
@@ -161,9 +161,9 @@ void keyboard_keypad_68_loop()
                     knob_pressed = false;
                     // reset long press flag
                     JsonDocument &app = status();
-                    if (app["knobLongPressed"].as<bool>())
+                    if (appState().knobLongPressed.load())
                     {
-                        app["knobLongPressed"] = false;
+                        appState().knobLongPressed = false;
 
                         // do not send out a released event
                         _debug("[keyboard_keypad_68_loop] knob long pressed and ignore actual released event\n");

@@ -1,6 +1,7 @@
 #include "Sync.h"
 #include "../Menu.h"
 #include "app/app.h"
+#include "service/Menu/MenuController.h"
 #include "display/display.h"
 //
 #include "service/WifiEntry/WifiEntry.h"
@@ -35,7 +36,7 @@ void Sync_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     ptft->println("");
 
     // SYNC STATE
-    int sync_state = app["sync_state"].as<int>();
+    int sync_state = appState().syncState.load();
 
     //
     if (sync_state == SYNC_START)
@@ -49,7 +50,7 @@ void Sync_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     else if (sync_state == SYNC_STARTED || sync_state == SYNC_PROGRESS)
     {
-        String message = app["sync_message"].as<String>();
+        String message = appState().syncMessage.get();
         if (message != "")
         {
             //
@@ -62,7 +63,7 @@ void Sync_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     //
     else if (sync_state == SYNC_ERROR)
     {
-        String error = app["sync_error"].as<String>();
+        String error = appState().syncError.get();
         if (error != "")
         {
             ptft->setTextColor(TFT_WHITE, TFT_RED);
@@ -90,19 +91,6 @@ void Sync_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 //
 void Sync_keyboard(char key)
 {
-    //
-    JsonDocument &app = status();
-
-    // SYNC STATE
-    int sync_state = app["sync_state"].as<int>();
-    if (sync_state == SYNC_COMPLETED || sync_state == SYNC_ERROR)
-    {
-        app["screen"] = WORDPROCESSOR;
-    }
-
-    // back to the menu, where WiFi setup and Drive Mode are
-    else if (sync_state == SYNC_NOT_CONFIGURED)
-    {
-        app["menu"]["state"] = MENU_HOME;
-    }
+    // the rules are shared by all displays, see service/Menu/MenuController
+    menu_sync_keyboard(key);
 }

@@ -27,7 +27,7 @@ void Wifi_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     // RENDER based on the screen index
     //
     JsonDocument &app = status();
-    int wifi_config_status = app["wifi_config_status"].as<int>();
+    int wifi_config_status = appState().wifiConfigStatus.load();
     if (wifi_config_status == WIFI_CONFIG_LIST)
     {
         Wifi_render_list(display, u8);
@@ -86,8 +86,8 @@ void Wifi_render_edit(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 {
     //
     JsonDocument &app = status();
-    int wifi_config_index = app["wifi_config_index"].as<int>();
-    int wifi_config_status = app["wifi_config_status"].as<int>();
+    int wifi_config_index = appState().wifiConfigIndex.load();
+    int wifi_config_status = appState().wifiConfigStatus.load();
 
     // Load saved WiFi connection information from the app["config"]["access_points"] array
     JsonArray savedAccessPoints = app["wifi"]["access_points"].as<JsonArray>();

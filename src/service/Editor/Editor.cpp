@@ -9,6 +9,9 @@
 // EDITOR CLASS IMPLEMENTATION
 //
 
+// how often, at most, a save also writes the word count to config.json
+#define WORDCOUNT_PERSIST_INTERVAL 60000
+
 // defined below - moves a file offset back to a UTF-8 character start
 static size_t alignToCharStart(File &file, size_t pos);
 
@@ -19,6 +22,8 @@ static void recoverTempFile(const String &fileName);
 // Editor Initialization with column and row setup
 void Editor::init(int cols, int rows, const EditorFont *font)
 {
+    EditorLock lock(mutex);
+
     // Define Screen Size
     this->cols = cols;
     this->rows = rows;
@@ -32,7 +37,6 @@ void Editor::init(int cols, int rows, const EditorFont *font)
     updateScreen();
 
     //
-    savingInProgress = false;
 
     // You can add any additional setup logic here
     _log("Editor initialized with columns: %d, rows: %d, font: %s\n",
@@ -43,11 +47,7 @@ void Editor::init(int cols, int rows, const EditorFont *font)
 // initialize FileBuffer and ScreenBuffer
 void Editor::loadFile(String fileName)
 {
-    if (savingInProgress)
-    {
-        _log("Save is is progress. Load file skipped\n");
-        return;
-    }
+    EditorLock lock(mutex);
 
     // app status
     JsonDocument &app = status();
@@ -56,11 +56,11 @@ void Editor::loadFile(String fileName)
     if (fileName.length() == 0)
     {
         //
-        app["error"] = "Filename is empty. Can't load.\n";
-        app["screen"] = ERRORSCREEN;
+        appState().error = "Filename is empty. Can't load.\n";
+        appState().screen = ERRORSCREEN;
 
         //
-        _debug(app["error"]);
+        _debug("%s", appState().error.get().c_str());
 
         return;
     }
@@ -80,18 +80,17 @@ void Editor::loadFile(String fileName)
         if (!file)
         {
             //
-            app["error"] = format("Failed to create a file. %s\n", fileName.c_str());
-            app["screen"] = ERRORSCREEN;
+            appState().error = format("Failed to create a file. %s\n", fileName.c_str());
+            appState().screen = ERRORSCREEN;
 
             //
-            _log(app["error"].as<const char *>());
+            _log("%s", appState().error.get().c_str());
 
             return;
         }
 
         //
         file.close();
-        delay(100);
 
         //
         _debug("File created. %s\n", fileName.c_str());
@@ -105,11 +104,11 @@ void Editor::loadFile(String fileName)
     if (!file)
     {
         //
-        app["error"] = format("file open failed %s\n", fileName.c_str());
-        app["screen"] = ERRORSCREEN;
+        appState().error = format("file open failed %s\n", fileName.c_str());
+        appState().screen = ERRORSCREEN;
 
         //
-        _debug(app["error"]);
+        _debug("%s", appState().error.get().c_str());
 
         return;
     }
@@ -148,12 +147,11 @@ void Editor::loadFile(String fileName)
     {
         //
         file.close();
-        delay(100);
 
         //
-        app["error"] = format("Failed to seek file pointer. fileSize: %d seekPos: %d\n", fileSize, seekPos);
-        app["screen"] = ERRORSCREEN;
-        _debug(app["error"].as<const char *>());
+        appState().error = format("Failed to seek file pointer. fileSize: %d seekPos: %d\n", fileSize, seekPos);
+        appState().screen = ERRORSCREEN;
+        _debug("%s", appState().error.get().c_str());
 
         return;
     }
@@ -163,11 +161,13 @@ void Editor::loadFile(String fileName)
     composer.reset();
 
     // Read file content into text buffer
-    int bufferSize = 0;
-    while (file.available())
-    {
-        buffer[bufferSize++] = file.read();
-    }
+    // one block read: reading byte by byte goes through the file system
+    // layer for every single byte and takes hundreds of milliseconds
+    int bufferSize = (int)file.read((uint8_t *)buffer, BUFFER_SIZE);
+    if (bufferSize < 0)
+        bufferSize = 0;
+    buffer[bufferSize] = '\0';
+    bufferLength = strlen(buffer);
     cursorPos = bufferSize;
 
     // this window mirrors [seekPos, seekPos+bufferSize) on disk exactly
@@ -176,7 +176,6 @@ void Editor::loadFile(String fileName)
 
     //
     file.close();
-    delay(100);
 
     // log
     _debug("Editor::loadFile size: %d, seek: %d, buffer: %d, cursor: %d\n",
@@ -191,11 +190,17 @@ void Editor::loadFile(String fileName)
 
     // update the word count in config
     int file_index = app["config"]["file_index"].as<int>();
-    app["config"][format("wordcount_file_%d", file_index)] = wordCountFile;
-    app["config"][format("wordcount_buffer_%d", file_index)] = wordCountBuffer;
+    String fileKey = format("wordcount_file_%d", file_index);
+    String bufferKey = format("wordcount_buffer_%d", file_index);
+    bool changed = app["config"][fileKey].as<int>() != wordCountFile ||
+                   app["config"][bufferKey].as<int>() != wordCountBuffer;
+    app["config"][fileKey] = wordCountFile;
+    app["config"][bufferKey] = wordCountBuffer;
 
-    //
-    config_save();
+    // config.json is only rewritten when the numbers actually differ -
+    // this runs every time the word processor opens
+    if (changed)
+        config_save();
 }
 
 //
@@ -345,33 +350,42 @@ static void reportSaveFailed(size_t bytesNeeded)
     if (total == 0)
     {
         // this storage can't tell how much room is left
-        app["error"] = "Save failed.\nStorage may be full.\nLatest text NOT saved.\n";
+        appState().error = "Save failed.\nStorage may be full.\nLatest text NOT saved.\n";
     }
     else if (available < (uint64_t)bytesNeeded + margin)
     {
-        app["error"] = "Storage full.\nLatest text NOT saved.\nDelete files to free space.\n";
+        appState().error = "Storage full.\nLatest text NOT saved.\nDelete files to free space.\n";
     }
     else
     {
-        app["error"] = "Save failed (write error).\nLatest text NOT saved.\n";
+        appState().error = "Save failed (write error).\nLatest text NOT saved.\n";
     }
-    app["screen"] = ERRORSCREEN;
+    appState().screen = ERRORSCREEN;
 
     _log("Save failed: needed %u bytes, storage total %u used %u\n",
          (unsigned int)bytesNeeded, (unsigned int)total, (unsigned int)used);
 }
 
+// Save the buffer to the file.
+//
+// The journal is written while the editor lock is held, so nothing can edit
+// the buffer or swap the window half way through. Keys typed meanwhile wait
+// for the lock. config.json (the word count) is written after the lock is
+// released: it doesn't touch the editor, and that keeps the wait short.
 bool Editor::saveFile()
 {
-    // TEMPORARY instrumentation for save-blocking-typing diagnosis
-    unsigned long saveTimingStart = millis();
+    bool configChanged = false;
+    bool ok = saveFileLocked(configChanged);
 
-    if (savingInProgress)
-    {
-        _log("Save already in progress, skipping.\n");
-        return false;
-    }
-    savingInProgress = true;
+    if (configChanged)
+        config_save();
+
+    return ok;
+}
+
+bool Editor::saveFileLocked(bool &configChanged)
+{
+    EditorLock lock(mutex);
 
     //
     JsonDocument &app = status();
@@ -380,13 +394,12 @@ bool Editor::saveFile()
     if (fileName.length() == 0)
     {
         //
-        app["error"] = "Filename is empty. Can't save.\n";
-        app["screen"] = ERRORSCREEN;
+        appState().error = "Filename is empty. Can't save.\n";
+        appState().screen = ERRORSCREEN;
 
         //
-        _log(app["error"]);
+        _log("%s", appState().error.get().c_str());
 
-        savingInProgress = false;
         return false;
     }
 
@@ -394,7 +407,6 @@ bool Editor::saveFile()
     if (this->saved)
     {
         _log("File already saved. No operation required.\n");
-        savingInProgress = false;
         return true;
     }
 
@@ -407,9 +419,6 @@ bool Editor::saveFile()
     size_t newLength = getBufferSize();
     size_t windowEnd = seekPos + loadedLength;
     bool hasTrailingData = windowEnd < fileSize;
-
-    // TEMPORARY instrumentation for save-blocking-typing diagnosis
-    bool tookSplicePath = hasTrailingData || newLength < loadedLength;
 
     // FAST PATH: window is the tail of the file and isn't shrinking -
     // just overwrite/extend in place, no rewrite of the rest of the file needed.
@@ -425,12 +434,11 @@ bool Editor::saveFile()
         if (!file)
         {
             //
-            app["error"] = "Failed to open file for writing\n";
-            app["screen"] = ERRORSCREEN;
+            appState().error = "Failed to open file for writing\n";
+            appState().screen = ERRORSCREEN;
 
             //
-            _log(app["error"]);
-            savingInProgress = false;
+            _log("%s", appState().error.get().c_str());
             return false;
         }
 
@@ -439,9 +447,7 @@ bool Editor::saveFile()
         {
             _log("Failed to seek file pointer\n");
             file.close();
-            delay(100);
 
-            savingInProgress = false;
             return false;
         }
         _log("Writing file at: %d\n", seekPos);
@@ -451,7 +457,6 @@ bool Editor::saveFile()
         _log("File written: %d bytes\n", length);
 
         file.close();
-        delay(100);
 
         // the window is the tail of the file, so the file must now end
         // exactly where the window ends
@@ -460,7 +465,6 @@ bool Editor::saveFile()
         {
             // the text stays in the buffer, marked unsaved
             reportSaveFailed(newLength);
-            savingInProgress = false;
             return false;
         }
 
@@ -508,7 +512,6 @@ bool Editor::saveFile()
             src.close();
         if (dst)
             dst.close();
-        delay(100);
 
         // everything must have reached the storage before the journal is touched
         if (ok)
@@ -520,7 +523,6 @@ bool Editor::saveFile()
             gfs()->remove(tempFileName.c_str());
 
             reportSaveFailed(newFileSize);
-            savingInProgress = false;
             return false;
         }
 
@@ -528,11 +530,10 @@ bool Editor::saveFile()
         {
             // the complete text is in the journal or in the working copy,
             // recoverTempFile() sorts it out at the next load
-            app["error"] = "Save failed (replace)\n";
-            app["screen"] = ERRORSCREEN;
-            _log(app["error"].as<const char *>());
+            appState().error = "Save failed (replace)\n";
+            appState().screen = ERRORSCREEN;
+            _log("%s", appState().error.get().c_str());
 
-            savingInProgress = false;
             return false;
         }
 
@@ -550,16 +551,26 @@ bool Editor::saveFile()
     wordCountBuffer = wordcounter_buffer(buffer);
     int file_index = app["config"]["file_index"].as<int>();
     app["config"][format("wordcount_buffer_%d", file_index)] = wordCountBuffer;
-    config_save();
 
-    //
-    savingInProgress = false;
+    // The count in memory (what the menu shows) is always current. The
+    // copy in config.json is refreshed at most once a minute, and only when
+    // the count changed: rewriting config.json on every single autosave
+    // doubled the flash writes for a number that is recounted from the
+    // file whenever it is opened anyway. Switching files and changing
+    // settings write config.json themselves, which carries the count along.
+    static unsigned long persistedAt = 0;
+    static int persistedCount = -1;
+    static int persistedFile = -1;
+    bool countChanged = wordCountBuffer != persistedCount || file_index != persistedFile;
+    if (countChanged && (persistedAt == 0 || millis() - persistedAt >= WORDCOUNT_PERSIST_INTERVAL))
+    {
+        persistedAt = millis();
+        persistedCount = wordCountBuffer;
+        persistedFile = file_index;
 
-    // TEMPORARY instrumentation for save-blocking-typing diagnosis
-    printf("[save] %s path, %d bytes buffer: %lu ms\n",
-           tookSplicePath ? "SPLICE" : "fast",
-           (int)newLength,
-           millis() - saveTimingStart);
+        // written by saveFile() once the editor lock is released
+        configChanged = true;
+    }
 
 #if defined(DEBUG) && defined(BOARD_PICO)
     printMemoryUsage();
@@ -573,14 +584,16 @@ bool Editor::saveFile()
 // in-memory buffer can slide to any part of the file, not just the tail.
 bool Editor::loadWindow(size_t offset, size_t length)
 {
+    EditorLock lock(mutex);
+
     JsonDocument &app = status();
 
     File file = gfs()->open(fileName.c_str(), "r");
     if (!file)
     {
-        app["error"] = format("file open failed %s\n", fileName.c_str());
-        app["screen"] = ERRORSCREEN;
-        _debug(app["error"]);
+        appState().error = format("file open failed %s\n", fileName.c_str());
+        appState().screen = ERRORSCREEN;
+        _debug("%s", appState().error.get().c_str());
         return false;
     }
 
@@ -593,11 +606,10 @@ bool Editor::loadWindow(size_t offset, size_t length)
     if (!file.seek(offset))
     {
         file.close();
-        delay(100);
 
-        app["error"] = format("Failed to seek file pointer. offset: %d\n", offset);
-        app["screen"] = ERRORSCREEN;
-        _debug(app["error"].as<const char *>());
+        appState().error = format("Failed to seek file pointer. offset: %d\n", offset);
+        appState().screen = ERRORSCREEN;
+        _debug("%s", appState().error.get().c_str());
         return false;
     }
 
@@ -613,6 +625,7 @@ bool Editor::loadWindow(size_t offset, size_t length)
     if ((int)bytesRead < 0)
         bytesRead = 0;
     buffer[bytesRead] = '\0';
+    bufferLength = strlen(buffer);
 
     file.close();
 
@@ -629,12 +642,7 @@ bool Editor::loadWindow(size_t offset, size_t length)
 // starts, so the writer can keep scrolling back through earlier text.
 void Editor::pageBackward()
 {
-    if (pagingInProgress)
-    {
-        _log("pageBackward: paging already in progress, skipping\n");
-        return;
-    }
-    pagingInProgress = true;
+    EditorLock lock(mutex);
 
     // stop auto-repeat so the display core can't re-enter paging while
     // this (slow, file I/O) load is still running
@@ -644,14 +652,12 @@ void Editor::pageBackward()
     if (seekPos == 0)
     {
         _log("pageBackward: already at the start of the file\n");
-        pagingInProgress = false;
         return;
     }
 
     if (!saved && !saveFile())
     {
         _log("pageBackward: flush failed, staying on current page\n");
-        pagingInProgress = false;
         return;
     }
 
@@ -661,7 +667,6 @@ void Editor::pageBackward()
 
     if (!loadWindow(newSeekPos, windowEnd - newSeekPos))
     {
-        pagingInProgress = false;
         return;
     }
 
@@ -669,19 +674,13 @@ void Editor::pageBackward()
     cursorPos = getBufferSize();
     updateScreen();
 
-    pagingInProgress = false;
 }
 
 // Load the chunk of the file that starts exactly where the current window
 // ends, so the writer can scroll forward again after paging backward.
 void Editor::pageForward()
 {
-    if (pagingInProgress)
-    {
-        _log("pageForward: paging already in progress, skipping\n");
-        return;
-    }
-    pagingInProgress = true;
+    EditorLock lock(mutex);
 
     // stop auto-repeat so the display core can't re-enter paging while
     // this (slow, file I/O) load is still running
@@ -691,7 +690,6 @@ void Editor::pageForward()
     if (!saved && !saveFile())
     {
         _log("pageForward: flush failed, staying on current page\n");
-        pagingInProgress = false;
         return;
     }
 
@@ -699,7 +697,6 @@ void Editor::pageForward()
     if (windowEnd >= fileSize)
     {
         // already at the live tail - nothing further on disk
-        pagingInProgress = false;
         return;
     }
 
@@ -709,7 +706,6 @@ void Editor::pageForward()
 
     if (!loadWindow(windowEnd, toLoad))
     {
-        pagingInProgress = false;
         return;
     }
 
@@ -717,7 +713,6 @@ void Editor::pageForward()
     cursorPos = 0;
     updateScreen();
 
-    pagingInProgress = false;
 }
 
 // The buffer filled up while typing. Flush it, then keep going from
@@ -728,17 +723,7 @@ void Editor::pageForward()
 // triggered on a non-tail window.
 void Editor::advanceWindow()
 {
-    // TEMPORARY instrumentation for save-blocking-typing diagnosis: this
-    // save is NOT gated by the idle timer in WP_check_saved - it runs
-    // synchronously on the keystroke path itself whenever the buffer fills.
-    printf("[save] advanceWindow: buffer full, forced save starting\n");
-
-    if (pagingInProgress)
-    {
-        _log("advanceWindow: paging already in progress, skipping\n");
-        return;
-    }
-    pagingInProgress = true;
+    EditorLock lock(mutex);
 
     // stop auto-repeat so the display core can't re-enter paging while
     // this (slow, file I/O) window swap is still running
@@ -748,7 +733,6 @@ void Editor::advanceWindow()
     if (!saveFile())
     {
         _log("advanceWindow: flush failed, buffer is full and can't advance\n");
-        pagingInProgress = false;
         return;
     }
 
@@ -785,7 +769,6 @@ void Editor::advanceWindow()
 
         if (!loadWindow(windowEnd, toLoad))
         {
-            pagingInProgress = false;
             return;
         }
 
@@ -794,17 +777,12 @@ void Editor::advanceWindow()
 
     updateScreen();
 
-    pagingInProgress = false;
 }
 
 // Make the current file empty
 void Editor::clearFile()
 {
-    if (savingInProgress)
-    {
-        _log("Save is is progress. Clear file skipped\n");
-        return;
-    }
+    EditorLock lock(mutex);
 
     //
     JsonDocument &app = status();
@@ -813,11 +791,11 @@ void Editor::clearFile()
     if (fileName.length() == 0)
     {
         //
-        app["error"] = "Filename is empty. Can't clear.\n";
-        app["screen"] = ERRORSCREEN;
+        appState().error = "Filename is empty. Can't clear.\n";
+        appState().screen = ERRORSCREEN;
 
         //
-        _log(app["error"]);
+        _log("%s", appState().error.get().c_str());
 
         return;
     }
@@ -845,11 +823,11 @@ void Editor::clearFile()
     else
     {
         //
-        app["error"] = format("Error making a backup file. %s\n", backupFileName.c_str());
-        app["screen"] = ERRORSCREEN;
+        appState().error = format("Error making a backup file. %s\n", backupFileName.c_str());
+        appState().screen = ERRORSCREEN;
 
         //
-        _log(app["error"]);
+        _log("%s", appState().error.get().c_str());
 
         return;
     }
@@ -859,18 +837,17 @@ void Editor::clearFile()
     if (!file)
     {
         //
-        app["error"] = format("Failed to create an empty file %s\n", fileName.c_str());
-        app["screen"] = ERRORSCREEN;
+        appState().error = format("Failed to create an empty file %s\n", fileName.c_str());
+        appState().screen = ERRORSCREEN;
 
         //
-        _log(app["error"]);
+        _log("%s", appState().error.get().c_str());
 
         return;
     }
 
     // clean up file
     file.close();
-    delay(100);
 
     // Go through the loading process of the empty file
     loadFile(fileName);
@@ -879,6 +856,12 @@ void Editor::clearFile()
 // House Keeping Tasks
 void Editor::loop()
 {
+    // Auto repeat types on behalf of the keyboard, from the display core.
+    // The lock is taken before lastKey is looked at: a page load on the
+    // keyboard core clears lastKey to stop the repeat, and this must see
+    // that instead of paging a second time once the load is done.
+    EditorLock lock(mutex);
+
     unsigned long now = millis();
     // Auto Repeat is activated
     if (lastKey != 0)
@@ -904,6 +887,11 @@ void Editor::keyboard(int key, bool pressed)
     // e.g. the Hangul/English toggle key which must type nothing)
     if (key == 0 || key == 1 || key == 27 || key == MENU)
         return;
+
+    // Keys arrive from the keyboard core and, as auto repeat, from the
+    // display core. One at a time: each edit moves text around in the
+    // buffer and rebuilds the line table.
+    EditorLock lock(mutex);
 
     //
     _debug("Editor::keyboard:: %c [%d] pressed: %d cursorPos: %d\n", key, key, pressed, cursorPos);
@@ -1468,6 +1456,7 @@ void Editor::addChar(int c)
         memcpy(buffer + cursorPos, encoded, len);
         cursorPos += len;
         buffer[bufferSize + len] = '\0';
+        bufferLength = bufferSize + len;
 
         _debug("FileBuffer::addChar::cursorPos %d %d (%d bytes)\n", cursorPos, c, len);
     }
@@ -1494,6 +1483,7 @@ void Editor::removeLastChar()
 
         // Null terminate the buffer
         buffer[bufferSize - len] = 0;
+        bufferLength = bufferSize - len;
         cursorPos = start;
 
         bufferSize = getBufferSize();
@@ -1518,6 +1508,7 @@ void Editor::removeCharAtCursor()
 
         // Null terminate the buffer
         buffer[bufferSize - len] = '\0';
+        bufferLength = bufferSize - len;
     }
 }
 
@@ -1552,6 +1543,7 @@ void Editor::removeLastWord()
         // the text ends with a line break: take back that one break
         // (and the spaces after it), the word above it stays
         buffer[end] = '\0';
+        bufferLength = end;
     }
     else
     {
@@ -1564,10 +1556,95 @@ void Editor::removeLastWord()
         // it is - a line break in front of the word must stay a line
         // break. start is -1 when the word is the whole buffer.
         buffer[start + 1] = '\0';
+        bufferLength = start + 1;
     }
 
     cursorPos = getBufferSize();
 
     //
     _debug("FileBuffer::removeLastWord %d\n", cursorPos);
+}
+
+//
+// RENDER SNAPSHOT
+//
+
+// The copy of the editor that the display draws from.
+// It is a whole second Editor so the drawing code reads it with the same
+// names it always used (buffer, linePositions, cursorLine ...). Allocated
+// on first use; on boards with PSRAM an allocation of this size lands there.
+Editor &Editor::view()
+{
+    static Editor *instance = nullptr;
+    if (instance == nullptr)
+    {
+        instance = new Editor();
+
+        // heap memory is not zeroed like the static instance is
+        instance->resetBuffer();
+        memset(instance->linePositions, 0, sizeof(instance->linePositions));
+        memset(instance->lineLengths, 0, sizeof(instance->lineLengths));
+        instance->linePositions[0] = instance->buffer;
+    }
+    return *instance;
+}
+
+// Copy everything the display reads into view(), in one step under the
+// editor lock. Drawing then works on text that can't change underneath it,
+// and the lock is only held for the copy - never while pixels are pushed,
+// which on the e-ink panel takes longer than a key press lasts.
+void Editor::snapshot()
+{
+    Editor &v = view();
+
+    EditorLock lock(mutex);
+
+    // the text
+    int size = getBufferSize();
+    memcpy(v.buffer, buffer, size + 1);
+    v.bufferLength = size;
+
+    // the line table, pointing into the copy instead of the live buffer
+    for (int i = 0; i <= totalLine; i++)
+    {
+        v.linePositions[i] = linePositions[i] ? v.buffer + (linePositions[i] - buffer) : v.buffer;
+        v.lineLengths[i] = lineLengths[i];
+    }
+    v.linePositions[totalLine + 1] = NULL;
+    v.lineLengths[totalLine + 1] = 0;
+    v.totalLine = totalLine;
+
+    // cursor
+    v.cursorPos = cursorPos;
+    v.cursorLine = cursorLine;
+    v.cursorLinePos = cursorLinePos;
+    v.cursorLineCols = cursorLineCols;
+
+    // layout
+    v.rows = rows;
+    v.cols = cols;
+    v.font = font;
+
+    // file
+    v.saved = saved;
+    v.fileSize = fileSize;
+    v.seekPos = seekPos;
+    v.loadedLength = loadedLength;
+    v.wordCountFile = wordCountFile;
+    v.wordCountBuffer = wordCountBuffer;
+    if (v.fileName != fileName)
+        v.fileName = fileName;
+
+    // Hangul composition state (whether a character is being composed)
+    v.composer = composer;
+
+    // Events for the display. They are handed over exactly once and
+    // together with the text they belong to. A flag the display has not
+    // cleared on its copy yet is kept.
+    v.pageChanged = v.pageChanged || pageChanged;
+    v.charReplaced = v.charReplaced || charReplaced;
+    v.backSpacePressed = v.backSpacePressed || backSpacePressed;
+    pageChanged = false;
+    charReplaced = false;
+    backSpacePressed = false;
 }

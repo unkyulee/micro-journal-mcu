@@ -10,8 +10,6 @@ void WP_setup(TFT_eSPI* ptft, U8g2_for_TFT_eSPI *pu8f);
 void WP_render(TFT_eSPI* ptft, U8g2_for_TFT_eSPI *pu8f);
 
 //
-void WP_check_saved();
-void WP_check_sleep();
 
 //
 void WP_render_clear(TFT_eSPI* ptft, U8g2_for_TFT_eSPI *pu8f);

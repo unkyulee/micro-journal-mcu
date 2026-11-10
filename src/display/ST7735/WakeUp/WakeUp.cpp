@@ -23,7 +23,7 @@ void WakeUp_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
         gif_render(ptft, pu8f);
     else
         // move to next screen
-        app["screen"] = WORDPROCESSOR;
+        appState().screen = WORDPROCESSOR;
 }
 
 void WakeUp_keyboard(int key, bool pressed, int index)

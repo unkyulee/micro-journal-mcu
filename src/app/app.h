@@ -6,6 +6,7 @@
 // default utility headers
 #include <ArduinoJson.h>
 #include "Log/Log.h"
+#include "State/AppState.h"
 #include "FileSystem/FileSystem.h"
 #include "Config/Config.h"
 #include "Verification/Verification.h"

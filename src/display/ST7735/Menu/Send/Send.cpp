@@ -37,9 +37,9 @@ void Send_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // request SEND to background task
     JsonDocument &app = status();
-    app["task"] = "send_start";
-    app["send_stop"] = false;
-    app["send_finished"] = false;
+    appState().requestTask(TASK_SEND_START);
+    appState().sendStop = false;
+    appState().sendFinished = false;
 }
 
 //
@@ -60,7 +60,7 @@ void Send_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     ptft->println("Press any key to STOP");
 
     // monitor if the send has finished
-    if (app["send_finished"].as<bool>())
+    if (appState().sendFinished.load())
     {
         _log("Send is completed. Moving back to the previous screen.\n");
         
@@ -68,11 +68,11 @@ void Send_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
         bool UsbKeyboard = app["config"]["UsbKeyboard"].as<bool>();
         if (UsbKeyboard)
         {
-            app["screen"] = KEYBOARDSCREEN;
+            appState().screen = KEYBOARDSCREEN;
         }
         else
         {
-            app["screen"] = WORDPROCESSOR;
+            appState().screen = WORDPROCESSOR;
         }
     }
 }
@@ -84,5 +84,5 @@ void Send_keyboard(char key, bool pressed)
 
     // any key pressed is going to stop sending text
     JsonDocument &app = status();
-    app["send_stop"] = true;
+    appState().sendStop = true;
 }

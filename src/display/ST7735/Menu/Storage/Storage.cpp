@@ -14,7 +14,7 @@ void Storage_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // Turn on Storage
     JsonDocument &app = status();
-    app["massStorage"] = true;
+    appState().massStorage = true;
 }
 
 //
@@ -45,7 +45,7 @@ void Storage_keyboard(char key, bool pressed)
         _log("Exit Mass Storage Started\n");
 
         // turn off USB drive
-        app["massStorage"] = false;
+        appState().massStorage = false;
 
         // wait until the storage is off
         while (true)
@@ -54,7 +54,7 @@ void Storage_keyboard(char key, bool pressed)
             _log("Checking when the device is ejected\n");
 
             //
-            if (app["massStorageStarted"].as<bool>() == false)
+            if (appState().massStorageStarted.load() == false)
             {
                 _log("Detected device is ejected. Rebooting\n");
 
@@ -72,6 +72,6 @@ void Storage_keyboard(char key, bool pressed)
         }
 
         // Move to home screen
-        app["menu"]["state"] = MENU_HOME;
+        appState().menuState = MENU_HOME;
     }
 }

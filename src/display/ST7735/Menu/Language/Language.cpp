@@ -74,6 +74,6 @@ void Language_keyboard(char key, bool pressed)
         config_save();
 
         // load USB Keyboard
-        app["screen"] = WORDPROCESSOR;
+        appState().screen = WORDPROCESSOR;
     }
 }

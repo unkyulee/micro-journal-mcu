@@ -1,6 +1,7 @@
 #include "WebEditor.h"
 #include "../Menu.h"
 #include "app/app.h"
+#include "service/Menu/MenuController.h"
 #include "display/display.h"
 #include <display/EPD/display_EPD.h>
 
@@ -60,11 +61,6 @@ void WebEditor_render()
 //
 void WebEditor_keyboard(char key)
 {
-    int state = fileserver_state();
-
-    // ESC finishes the session, any key leaves the error screen
-    if (state == FILESERVER_ERROR || key == 27 || key == MENU)
-    {
-        fileserver_stop_request();
-    }
+    // the rules are shared by all displays, see service/Menu/MenuController
+    menu_web_keyboard(key);
 }

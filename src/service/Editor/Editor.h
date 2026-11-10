@@ -7,6 +7,7 @@
 #include "EditorFont.h"
 #include "HangulComposer.h"
 #include "Utf8.h"
+#include "EditorLock.h"
 
 #ifdef BOARD_PICO
 #define BUFFER_SIZE 2000
@@ -117,14 +118,23 @@ public:
     void pageForward();
     void advanceWindow();
 
-    //
-    bool savingInProgress = false;
+    // Guards the buffer, the line table, the cursor and the file window.
+    // Every public operation below takes it itself, so callers don't have
+    // to - a save, a page load and a keystroke simply take turns. Code that
+    // reads the buffer directly from another core (the word counter) holds
+    // it for the read: EditorLock lock(editor.mutex);
+    // Replaces the old savingInProgress / pagingInProgress flags, which
+    // were checked and set in two steps and so could not actually keep two
+    // cores apart.
+    EditorMutex mutex;
 
-    // Guards pageBackward/pageForward/advanceWindow against re-entry. The
-    // auto-repeat engine (Editor::loop) runs on the display core while key
-    // events arrive on the keyboard core, so a slow window load can be
-    // re-triggered concurrently without this.
-    volatile bool pagingInProgress = false;
+    // What the display draws from: a copy of the editor made under the
+    // lock by snapshot(). Drawing code reads view() instead of the live
+    // editor, calls snapshot() once at the start of each render, and
+    // clears the event flags (pageChanged, charReplaced, backSpacePressed)
+    // on the view.
+    static Editor &view();
+    void snapshot();
 
     // Handle Keyboard Inputs
     void keyboard(int key, bool pressed);
@@ -135,8 +145,16 @@ public:
     bool backSpacePressed = false;
 
     //
-    int getBufferSize() { return strlen(buffer); }
-    void resetBuffer() { memset(buffer, '\0', sizeof(buffer)); }
+    // Length of the text in the buffer, in bytes. Kept up to date by every
+    // operation that changes the text, instead of measuring the buffer with
+    // strlen each time it is asked for - which is several times per key.
+    int bufferLength = 0;
+    int getBufferSize() { return bufferLength; }
+    void resetBuffer()
+    {
+        memset(buffer, '\0', sizeof(buffer));
+        bufferLength = 0;
+    }
 
     // The buffer holds UTF-8: addChar takes a codepoint and encodes it,
     // the remove operations always delete whole characters.
@@ -176,4 +194,7 @@ public:
 private:
     // Private constructor to prevent instantiation
     Editor() {}
+
+    // saveFile() without the config.json write, see Editor.cpp
+    bool saveFileLocked(bool &configChanged);
 };

@@ -40,10 +40,6 @@
 #include "service/BLEServer/BLEServer.h"
 #endif
 
-#ifdef CARDPUTER
-#include "M5Cardputer.h"
-#endif
-
 // When app is not ready. Such as file system is not initialized
 // then no more operation should occur.
 // this is a flag to check if the app is ready
@@ -62,11 +58,6 @@ void app_setup()
     Serial.begin(115200);
 #ifdef DEBUG
     delay(5000);
-#endif
-
-#ifdef CARDPUTER
-    auto cfg = M5.config();
-    M5Cardputer.begin(cfg, true); // enableKeyboard
 #endif
 
 #if defined(REV7)
@@ -142,7 +133,7 @@ void app_setup()
     battery_setup();
 #endif
 
-#if defined(REV5) || defined(CARDPUTER)
+#if defined(REV5)
     // BLE Server Background Task
     BLEServer_init();
 #endif
@@ -199,10 +190,20 @@ void app_loop()
 }
 
 // status storage
+// Only the configuration lives in this document now ("config", the saved
+// WiFi networks and a few lists the menus show). What the cores share while
+// running is in appState().
 JsonDocument _status;
 JsonDocument &status()
 {
     return _status;
+}
+
+// shared run time state, see app/State/AppState.h
+AppState &appState()
+{
+    static AppState instance;
+    return instance;
 }
 
 // file system instance
@@ -249,17 +250,17 @@ FileSystem *gfs()
             {
                 // the error screen asks before anything is erased,
                 // see filesystem_format_confirm()
-                app["error"] = "Storage can't be read.\n\n"
+                appState().error = "Storage can't be read.\n\n"
                                "Y: format storage\n"
                                "   (erases ALL files)\n\n"
                                "Other key: restart\n";
             }
             else
             {
-                app["error"] = "File System Failed\n";
+                appState().error = "File System Failed\n";
             }
-            app["screen"] = ERRORSCREEN; // ERROR SCREEN IS 0
-            _log(app["error"]);
+            appState().screen = ERRORSCREEN; // ERROR SCREEN IS 0
+            _log("%s", appState().error.get().c_str());
         }
         else
         {

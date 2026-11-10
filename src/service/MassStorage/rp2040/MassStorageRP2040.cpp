@@ -67,9 +67,6 @@ namespace
 
     bool startStop(uint8_t power_condition, bool start, bool load_eject)
     {
-        // TEMP DIAGNOSTIC: confirm whether the host ever sends this at all.
-        Serial.printf("MSC startStop: power_condition=%u start=%d load_eject=%d\n", power_condition, start, load_eject);
-
         // Host is ejecting or re-attaching the disk.
         if (!start && load_eject)
         {
@@ -94,9 +91,6 @@ namespace
 extern "C" bool tud_msc_prevent_allow_medium_removal_cb(uint8_t lun, uint8_t prohibit_removal, uint8_t control)
 {
     (void)lun;
-
-    // TEMP DIAGNOSTIC: confirm whether the host ever sends this at all.
-    Serial.printf("MSC preventAllowMediumRemoval: prohibit_removal=%u control=%u\n", prohibit_removal, control);
 
     if (!prohibit_removal)
     {
@@ -133,14 +127,14 @@ void ms_rp2040_loop()
         JsonDocument &app = status();
 
         // check if it is requested to turn off
-        bool massStorageRequest = app["massStorage"].as<bool>();
+        bool massStorageRequest = appState().massStorage.load();
         // false means it is requested to turn off
 
         // mass storage is on
         if (massStorageRequest)
         {
             // start the device
-            if (app["massStorageStarted"].as<bool>() == false)
+            if (appState().massStorageStarted.load() == false)
             {
                 // Release the app's own FatFS mount first -- gfs() and the
                 // raw fatfs::disk_* calls below share the same underlying
@@ -165,7 +159,7 @@ void ms_rp2040_loop()
                 msc.setCapacity((uint32_t)sectCount, (uint16_t)ss);
 
                 //
-                app["massStorageStarted"] = true;
+                appState().massStorageStarted = true;
                 _log("Mass Storage begin\n");
             }
 
@@ -176,8 +170,8 @@ void ms_rp2040_loop()
                 _log("Mass Storage Ejected\n");
                 started = false;
                 //
-                app["massStorageStarted"] = false;
-                app["massStorage"] = false;
+                appState().massStorageStarted = false;
+                appState().massStorage = false;
 
                 _log("Mass Storage ejected\n");
 
@@ -189,13 +183,13 @@ void ms_rp2040_loop()
 
         else
         {
-            if (app["massStorageStarted"].as<bool>() == true)
+            if (appState().massStorageStarted.load() == true)
             {
                 unplug();
                 started = false;
 
                 //
-                app["massStorageStarted"] = false;
+                appState().massStorageStarted = false;
                 _log("Mass Storage end\n");
             }
         }

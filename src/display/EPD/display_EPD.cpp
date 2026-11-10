@@ -41,7 +41,7 @@ uint8_t *display_EPD_framebuffer()
 int display_EPD_core()
 {
     JsonDocument &app = status();
-    int screen = app["screen"].as<int>();
+    int screen = appState().screen.load();
 
     // if app is not ready then run in the main core
     if (!app_ready())
@@ -50,7 +50,7 @@ int display_EPD_core()
     // IN MENU run it in the main core, so that sync process runs independently
     if (screen == MENUSCREEN)
     {
-        int menu = app["menu"]["state"].as<int>();
+        int menu = appState().menuState.load();
         if (menu == MENU_SYNC || menu == MENU_WEB)
             return 0;
     }
@@ -126,7 +126,7 @@ static void display_EPD_render()
 {
     JsonDocument &app = status();
     static int screen_prev = -1;
-    int screen = app["screen"].as<int>();
+    int screen = appState().screen.load();
 
     // Error Screen
     if (screen == ERRORSCREEN)
@@ -218,7 +218,7 @@ static void display_EPD_render()
     }
 
     //
-    app["screen_prev"] = screen;
+    appState().screenPrev = screen;
     screen_prev = screen;
 }
 
@@ -227,7 +227,7 @@ static void display_EPD_render()
 void display_EPD_keyboard(int key, bool pressed, int index)
 {
     JsonDocument &app = status();
-    int screen = app["screen"].as<int>();
+    int screen = appState().screen.load();
 
     // the word processor takes key strokes directly to keep typing responsive
     if (screen == WORDPROCESSOR)
@@ -256,8 +256,8 @@ void display_EPD_process_keys()
     QueuedKey queued;
     while (xQueueReceive(key_queue, &queued, 0) == pdTRUE)
     {
-        int screen = app["screen"].as<int>();
-        int menu = app["menu"]["state"].as<int>();
+        int screen = appState().screen.load();
+        int menu = appState().menuState.load();
 
         // the key was meant for a screen that is no longer shown
         if (queued.screen != screen)
@@ -266,7 +266,7 @@ void display_EPD_process_keys()
         display_EPD_handle_key(queued.key, screen);
 
         // let the new screen or menu run its setup before taking more keys
-        if (app["screen"].as<int>() != screen || app["menu"]["state"].as<int>() != menu)
+        if (appState().screen.load() != screen || appState().menuState.load() != menu)
             break;
     }
 }
@@ -317,7 +317,7 @@ void display_EPD_handle_key(int key, int screen)
 void display_EPD_keyboard_report(uint8_t modifier, uint8_t reserved, uint8_t *keycodes)
 {
     JsonDocument &app = status();
-    int screen = app["screen"].as<int>();
+    int screen = appState().screen.load();
 
     if (screen == KEYBOARDSCREEN)
     {

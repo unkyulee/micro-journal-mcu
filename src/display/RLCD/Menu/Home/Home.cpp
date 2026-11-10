@@ -1,6 +1,7 @@
 #include "Home.h"
 #include "../Menu.h"
 #include "app/app.h"
+#include "service/Menu/MenuController.h"
 #include "display/display.h"
 #include "keyboard/keyboard.h"
 
@@ -15,7 +16,7 @@ void Home_setup(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 
     //
     JsonDocument &app = status();
-    app["menu"]["state"] = MENU_HOME;
+    appState().menuState = MENU_HOME;
 }
 
 //
@@ -43,7 +44,7 @@ void Home_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
     u8->println(" [K] BLE KEYBOARD");
     u8->println(" [L] LANGUAGE - " + keyboard_layout);
     // narrow left column - show custom keymap on its own line
-    if (app["keyboard_custom"].as<bool>())
+    if (appState().keyboardCustom.load())
         u8->println("     (Custom)");
     u8->println(" [T] WORD RAIN");
 
@@ -72,78 +73,6 @@ void Home_render(ST7305_4p2_BW_DisplayDriver *display, U8G2_FOR_ST73XX *u8)
 //
 void Home_keyboard(char key)
 {
-    //
-    JsonDocument &app = status();
-
-    // network backup
-    if (key == 'N' || key == 'n')
-    {
-        // always listed: the backup screen explains what to set up
-        // to sync
-        app["menu"]["state"] = MENU_SYNC;
-    }
-
-    else if (key == 'D' || key == 'd')
-    {
-        // to clear file
-        app["menu"]["state"] = MENU_CLEAR;
-    }
-
-    else if (key == '\b' || key == 'B' || key == 'b')
-    {
-        // go back to the word processor
-        app["screen"] = WORDPROCESSOR;
-    }
-
-    else if (key == 'w' || key == 'W')
-    {
-        // move to keyboard layout
-        app["menu"]["state"] = MENU_WIFI;
-    }
-
-    else if (key == 'l' || key == 'L')
-    {
-        // move to keyboard layout
-        app["menu"]["state"] = MENU_LAYOUT;
-    }
-
-    else if (key == 'k' || key == 'K')
-    {
-        // move to keyboard layout
-        app["screen"] = KEYBOARDSCREEN;
-    }
-
-    else if (key == 's' || key == 'S')
-    {
-        // act as a bluetooth keyboard to SEND text to a computer
-        app["screen"] = SENDSCREEN;
-    }
-
-    else if (key == 't' || key == 'T')
-    {
-        // typing game
-        app["screen"] = GAMESCREEN;
-    }
-
-    else if (key == 'e' || key == 'E')
-    {
-        // edit files from a browser over wifi
-        app["menu"]["state"] = MENU_WEB;
-    }
-
-    // chose file
-    if (key > 47 && key < 58)
-    {
-        // save config
-        int file_index = key - 48;
-        app["config"]["file_index"] = file_index;
-        config_save();
-
-        // load editor
-        Editor::getInstance().loadFile(format("/%d.txt", file_index));
-
-        //
-        // go back to the word processor
-        app["screen"] = WORDPROCESSOR;
-    }
+    // the rules are shared by all displays, see service/Menu/MenuController
+    menu_home_keyboard(key);
 }

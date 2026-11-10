@@ -82,7 +82,7 @@ void fileserver_stop_request()
 {
     startRequested = false;
     stopRequested = true;
-    status()["clear"] = true;
+    appState().clear = true;
     _log("[fileserver_stop_request] File Server Stop Requested\n");
 }
 
@@ -185,7 +185,7 @@ static void fileserver_message(const String &message)
 {
     JsonDocument &app = status();
     app["fileserver"]["message"] = message;
-    app["clear"] = true;
+    appState().clear = true;
 
     _log("[fileserver] %s\n", message.c_str());
 }
@@ -860,5 +860,5 @@ static void fileserver_stop()
     app["fileserver"].to<JsonObject>();
 
     //
-    app["screen"] = WORDPROCESSOR;
+    appState().screen = WORDPROCESSOR;
 }

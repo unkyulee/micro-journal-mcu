@@ -6,13 +6,13 @@
 
 //
 #include "service/Editor/Editor.h"
+#include "service/Editor/EditorTimers.h"
 
 //
 int STATUSBAR_Y = 224;
 int screen_width = 320;
 int screen_height = 240;
 bool clear_background = true;
-unsigned int last_sleep = millis();
 
 // Generated Korean font - see script/generate_u8g2_korean_font.py. Same
 // u8g2 binary format as the Rev.8 RLCD build, from D2Coding 1.3.2 (Naver,
@@ -94,22 +94,27 @@ void WP_setup(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     clear_background = true;
 
     // sleep timer reset
-    last_sleep = millis();
+    editor_activity();
 }
 
 //
 void WP_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 {
+    // Take this round's copy of the editor. Everything drawn below reads
+    // Editor::view(), so the text can't change half way through a redraw
+    // while keys keep arriving on the other core.
+    Editor::getInstance().snapshot();
+
     // the editor swapped to a different window of the file - force a full redraw
-    if (Editor::getInstance().pageChanged)
+    if (Editor::view().pageChanged)
     {
-        Editor::getInstance().pageChanged = false;
+        Editor::view().pageChanged = false;
         clear_background = true;
     }
 
     // timers
-    WP_check_saved();
-    WP_check_sleep();
+    editor_autosave(3000);
+    editor_sleep_check(10 * 60 * 1000);
 
     // CLEAR BACKGROUND
     WP_render_clear(ptft, pu8f);
@@ -131,58 +136,6 @@ void WP_render(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     Editor::getInstance().loop();
 }
 
-// Check if text is saved
-void WP_check_saved()
-{
-    //
-    static unsigned int last = millis();
-    static int lastBufferSize = Editor::getInstance().getBufferSize();
-    int bufferSize = Editor::getInstance().getBufferSize();
-
-    //
-    // when the file is saved then extend the autosave timer
-    if (lastBufferSize != bufferSize)
-    {
-        last = millis();
-
-        //
-        lastBufferSize = bufferSize;
-    }
-
-    //
-    // when idle for 4 seconds then auto save
-    if (millis() - last > 3000)
-    {
-        //
-        last = millis();
-
-        if (!Editor::getInstance().saved)
-            Editor::getInstance().saveFile();
-    }
-}
-
-void WP_check_sleep()
-{
-    //
-    // when the file is saved then extend the sleep timer
-    if (!Editor::getInstance().saved)
-    {
-        // when typed then reset sleep timer
-        last_sleep = millis();
-    }
-
-    // 600 seconds - 10 minutes
-    if (millis() - last_sleep > 600000)
-    {
-        // if no action for 10 minute go to sleep
-        last_sleep = millis();
-
-        //
-        JsonDocument &app = status();
-        app["screen"] = SLEEPSCREEN;
-    }
-}
-
 //
 // Clear Screen
 // Do it as less as possible so that there is the least amount of the flicker
@@ -202,9 +155,9 @@ void WP_render_clear(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // the composing Hangul character was replaced in place - the new glyph
     // doesn't necessarily cover the old one's pixels, so repaint fully
-    if (Editor::getInstance().charReplaced)
+    if (Editor::view().charReplaced)
     {
-        Editor::getInstance().charReplaced = false;
+        Editor::view().charReplaced = false;
         clear_background = true;
     }
 
@@ -215,14 +168,14 @@ void WP_render_clear(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     //
     static int cursorLine_prev = 0;
     static int cursorPos_prev = 0;
-    int cursorLine = Editor::getInstance().cursorLine;
-    int cursorPos = Editor::getInstance().cursorPos;
-    int cursorLinePos = Editor::getInstance().cursorLinePos;
-    int cursorLineLength = Editor::getInstance().lineLengths[cursorLine];
+    int cursorLine = Editor::view().cursorLine;
+    int cursorPos = Editor::view().cursorPos;
+    int cursorLinePos = Editor::view().cursorLinePos;
+    int cursorLineLength = Editor::view().lineLengths[cursorLine];
 
     //
     static int bufferSize_prev = 0;
-    int bufferSize = Editor::getInstance().getBufferSize();
+    int bufferSize = Editor::view().getBufferSize();
 
     // When new line clear everything
     if (cursorLine_prev != cursorLine)
@@ -242,7 +195,7 @@ void WP_render_clear(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     if (cursorPos_prev != cursorPos)
     {
         // if it is typing at the end don't flicker
-        if (cursorPos != Editor::getInstance().getBufferSize())
+        if (cursorPos != Editor::view().getBufferSize())
         {
             // if the edit line is empty then don't flicker
             //
@@ -263,8 +216,8 @@ void WP_render_clear(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 //
 void WP_render_line(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f, int line_num)
 {
-    char *line = Editor::getInstance().linePositions[line_num];
-    int length = Editor::getInstance().lineLengths[line_num];
+    char *line = Editor::view().linePositions[line_num];
+    int length = Editor::view().lineLengths[line_num];
 
     // render - the buffer holds UTF-8 and the u8g2 print pipeline decodes
     // multi-byte characters itself, so bytes stream straight through
@@ -295,9 +248,9 @@ void WP_render_text(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     // Cursor Information
     static int cursorLine_prev = 0;
     static int cursorLinePos_prev = 0;
-    int cursorLine = Editor::getInstance().cursorLine;
-    int cursorLinePos = Editor::getInstance().cursorLinePos;
-    int totalLine = Editor::getInstance().totalLine;
+    int cursorLine = Editor::view().cursorLine;
+    int cursorLinePos = Editor::view().cursorLinePos;
+    int totalLine = Editor::view().totalLine;
 
     //
     // Middle part of the text will be rendered
@@ -320,7 +273,7 @@ void WP_render_text(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
         pu8f->setCursor(0, wp_font->lineHeight + wp_font->lineHeight / 2);
 
         // start line
-        int rows = Editor::getInstance().rows;
+        int rows = Editor::view().rows;
 
         //
         for (int i = cursorLine - rows; i < cursorLine; i++)
@@ -375,7 +328,7 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     ptft->setTextColor(foreground_color, background_color);
     ptft->setCursor(30, STATUSBAR_Y, 2);
 
-    int wordCount = Editor::getInstance().wordCountFile + Editor::getInstance().wordCountBuffer;
+    int wordCount = Editor::view().wordCountFile + Editor::view().wordCountBuffer;
     String wordCountFormatted = formatNumber(wordCount);
     ptft->printf("%s words", wordCountFormatted.c_str());
 
@@ -390,7 +343,7 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
     {
         // CHECK BLE Keyboard Connected
         ptft->setCursor(200, STATUSBAR_Y + 6, 1);
-        if (app["ble_connected"].as<bool>())
+        if (appState().bleConnected.load())
         {
             ptft->setTextColor(TFT_GREEN, background_color);
             ptft->print("BLE");
@@ -404,7 +357,7 @@ void WP_render_status(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 #endif
 
     // SAVE STATUS
-    if (Editor::getInstance().saved)
+    if (Editor::view().saved)
     {
         ptft->fillCircle(310, STATUSBAR_Y + 8, 5, TFT_GREEN);
     }
@@ -427,16 +380,16 @@ void WP_render_cursor(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 
     // Cursor information
     static int cursorLineCols_prev = 0;
-    int cursorLinePos = Editor::getInstance().cursorLinePos;
-    int cursorLineCols = Editor::getInstance().cursorLineCols;
-    int cursorPos = Editor::getInstance().cursorPos;
+    int cursorLinePos = Editor::view().cursorLinePos;
+    int cursorLineCols = Editor::view().cursorLineCols;
+    int cursorPos = Editor::view().cursorPos;
 
     // Calculate Cursor X position
     // reached the line where cursor is
     // cursor offset is measured in display columns so it stays correct
     // once double-width glyphs exist
     int cursorX = 0;
-    if (Editor::getInstance().buffer[cursorPos - 1] != '\n' && cursorLinePos != 0)
+    if (Editor::view().buffer[cursorPos - 1] != '\n' && cursorLinePos != 0)
     {
         cursorX = cursorLineCols * wp_font->glyphWidth;
     }
@@ -471,7 +424,7 @@ void WP_render_cursor(TFT_eSPI *ptft, U8g2_for_TFT_eSPI *pu8f)
 void WP_keyboard(int key, bool pressed, int index)
 {
     // Every key stroke resets sleep timer
-    last_sleep = millis();
+    editor_activity();
 
     //
     JsonDocument &app = status();
@@ -485,7 +438,7 @@ void WP_keyboard(int key, bool pressed, int index)
             Editor::getInstance().saveFile();
 
             //
-            app["screen"] = MENUSCREEN;
+            appState().screen = MENUSCREEN;
 
             //
             _debug("WP_keyboard::Moving to Menu Screen\n");
