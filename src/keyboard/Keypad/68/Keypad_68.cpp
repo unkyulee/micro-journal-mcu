@@ -316,11 +316,34 @@ int keyboard_keypad_68_get_key(keypadEvent e)
     else if (use_locale)
     {
         uint8_t hid = key_hid[e.bit.KEY];
+
+        // The key between left Shift and W sits where an ISO keyboard has
+        // its extra key (0x64), which is < > in French. key_hid reports it
+        // as 0x35, the French superscript two key. Remapped here and not in
+        // the French table, which USB keyboards share and where 0x35 really
+        // is the superscript two key.
+        if (locale == "FR" && hid == 0x35)
+            hid = 0x64;
+
         if (hid != 0)
         {
-            int ascii = keyboard_keycode_ascii(locale, hid, _shift_pressed, _fn_pressed, e.bit.EVENT == KEY_JUST_PRESSED);
-            if (ascii != 0)
-                key = ascii;
+            // Look the key up as a release first: that skips the dead key
+            // (precursor) filter, so 0 here really means "this locale has
+            // no character on this key" and the layer table value stands.
+            int mapped = keyboard_keycode_ascii(locale, hid, _shift_pressed, _fn_pressed, false);
+            if (mapped != 0)
+            {
+                // The locale owns this key. On a press, run it through the
+                // dead key filter and trust the result even when it is 0:
+                // 0 means a dead key ( ^ ¨ ` ~ ) was held back to combine
+                // with the next letter, so nothing must be typed yet.
+                // Falling back to the layer table there would print the US
+                // character of the key instead ('[' for the French ^).
+                if (e.bit.EVENT == KEY_JUST_PRESSED)
+                    key = keyboard_keycode_ascii(locale, hid, _shift_pressed, _fn_pressed, true);
+                else
+                    key = mapped;
+            }
         }
     }
 

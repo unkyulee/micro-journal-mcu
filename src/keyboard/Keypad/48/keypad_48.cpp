@@ -345,16 +345,23 @@ int keyboard_keypad_48_get_key(keypadEvent e)
         uint8_t hid = key_hid[e.bit.KEY];
         if (hid != 0)
         {
-            int ascii = keyboard_keycode_ascii(locale, hid, _shift_pressed, _raise_pressed, e.bit.EVENT == KEY_JUST_PRESSED);
-            if (locale == "INT")
+            // Look the key up as a release first: that skips the dead key
+            // (precursor) filter, so 0 here really means "this locale has
+            // no character on this key" and the layer table value stands.
+            int mapped = keyboard_keycode_ascii(locale, hid, _shift_pressed, _raise_pressed, false);
+            if (mapped != 0)
             {
-                if (e.bit.EVENT == KEY_JUST_PRESSED && key >= 32 && key <= 126)
-                {
-                    key = keyboard_precursor_filter(key);
-                }
+                // The locale owns this key. On a press, run it through the
+                // dead key filter and trust the result even when it is 0:
+                // 0 means a dead key ( ^ ¨ ` ~ ) was held back to combine
+                // with the next letter, so nothing must be typed yet.
+                // Falling back to the layer table there would print the US
+                // character of the key instead.
+                if (e.bit.EVENT == KEY_JUST_PRESSED)
+                    key = keyboard_keycode_ascii(locale, hid, _shift_pressed, _raise_pressed, true);
+                else
+                    key = mapped;
             }
-            if (ascii != 0)
-                key = ascii;
         }
     }
 
