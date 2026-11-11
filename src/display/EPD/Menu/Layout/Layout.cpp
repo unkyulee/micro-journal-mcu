@@ -78,13 +78,27 @@ void Layout_keyboard(char key)
         {'u', {"US", 0}} // Default US layout
     };
 
+    // letters work in either case (caps lock, shift), as in the main menu
+    if (key >= 'A' && key <= 'Z')
+        key = key - 'A' + 'a';
+
     // Find the layout corresponding to the key
-    LayoutOption selected = {"US", 0}; // Default to US layout
     auto it = layoutMap.find(key);
-    if (it != layoutMap.end())
+    _log("Layout_keyboard key %d layout %s\n", (int)key,
+         it != layoutMap.end() ? it->second.layout : "(none)");
+
+    if (it == layoutMap.end())
     {
-        selected = it->second;
+        // ESC and backspace go back to the menu and keep the layout
+        if (key == MENU || key == 27 || key == '\b')
+            appState().menuState = MENU_HOME;
+
+        // Any other key is ignored. It used to select the US layout and
+        // leave the screen, so one stray key silently reset the layout.
+        return;
     }
+
+    LayoutOption selected = it->second;
 
     //
     app["config"]["keyboard_layout"] = selected.layout;

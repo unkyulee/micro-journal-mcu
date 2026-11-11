@@ -176,12 +176,20 @@ void epd_init()
     output_queue = xQueueCreate(64, EPD_WIDTH / 2);
 
     // persistent frame workers, one per core (see epd_draw_image)
+    //
+    // "render" shifts the rows out to the panel and keeps its core busy for
+    // the whole draw, about 0.3 seconds for a character or the cursor. It
+    // must not sit on core 1: the Arduino loop() runs there with a lower
+    // priority and reads the keyboard, so it stood still for every draw and
+    // keys typed quickly in that time were lost. "provide_out" only copies
+    // rows into the queue and sleeps while the queue is full, it leaves
+    // core 1 to the loop.
     fetch_sem = xSemaphoreCreateBinary();
     feed_sem = xSemaphoreCreateBinary();
     xTaskCreatePinnedToCore(provide_out_task, "provide_out", 8192,
-                            NULL, 10, &provide_task, 0);
+                            NULL, 10, &provide_task, 1);
     xTaskCreatePinnedToCore(feed_display_task, "render", 8192,
-                            NULL, 10, &feed_task, 1);
+                            NULL, 10, &feed_task, 0);
 }
 
 
