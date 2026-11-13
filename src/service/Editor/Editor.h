@@ -138,6 +138,11 @@ public:
 
     // Handle Keyboard Inputs
     void keyboard(int key, bool pressed);
+
+    // Stop auto repeat no matter which key is repeating. For keyboard
+    // drivers that know the physical key went up even when its release
+    // never reaches keyboard() - see Keypad_68.
+    void stopRepeat();
     int lastKey = 0; // int: keys above 127 must not be narrowed
     unsigned long lastPressTime = 0;
     unsigned long repeatInterval = 80; // ms between repeats

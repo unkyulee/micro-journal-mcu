@@ -12,6 +12,9 @@
 #include "keyboard/Locale/ko/ko.h"
 
 //
+#include "service/Editor/Editor.h"
+
+//
 #define LAYERS 4 // layers
 #define COLS 9   // columns
 #define ROWS 8   // rows
@@ -120,6 +123,9 @@ void keyboard_keypad_68_loop()
     static unsigned long knob_press_time = 0;
     static bool knob_pressed = false;
 
+    // position of the key that last typed something, -1 when it is up
+    static int repeat_key_index = -1;
+
     // check if knob is long pressed - 2 seconds
     if (knob_pressed == true && millis() - knob_press_time > 1000 && appState().knobLongPressed.load() == false)
     {
@@ -144,6 +150,19 @@ void keyboard_keypad_68_loop()
         {
             //
             keypadEvent e = customKeypad.read();
+
+            // The physical key that started auto repeat went up: stop the
+            // repeat here, by key position. The translated release below
+            // does not always reach the editor - it can resolve to another
+            // character (Fn pressed meanwhile turns a digit into a file
+            // switch) or go to another screen (menu opened while the key
+            // was held) - and the key would then repeat forever.
+            if (e.bit.EVENT == KEY_JUST_RELEASED && e.bit.KEY == repeat_key_index)
+            {
+                repeat_key_index = -1;
+                Editor::getInstance().stopRepeat();
+            }
+
             // Check if knob is long pressed
             // Detect the knob click by the position of the key index
             // Index 69 is the knob. Index 0 is ESC and must remain in the
@@ -175,6 +194,11 @@ void keyboard_keypad_68_loop()
             //
             // check if the key is pressed
             int character = keyboard_keypad_68_get_key(e);
+
+            // remember which physical key is typing, so its release can
+            // stop auto repeat (modifiers and dead keys type nothing)
+            if (e.bit.EVENT == KEY_JUST_PRESSED && character != 0)
+                repeat_key_index = e.bit.KEY;
 
             // send over the key to the display
             _debug("[keyboard_keypad_68_loop] Key: %d, Event: %d, Row: %d, Col: %d Character: [%d]\n",

@@ -879,6 +879,15 @@ void Editor::loop()
     }
 }
 
+// Stop auto repeat, whatever key it is repeating
+void Editor::stopRepeat()
+{
+    EditorLock lock(mutex);
+
+    lastKey = 0;
+    lastPressTime = 0;
+}
+
 // Handle Keyboard Input
 void Editor::keyboard(int key, bool pressed)
 {
